@@ -1,0 +1,11 @@
+{
+  "name": "pending-changes",
+  "version": "0.1.0",
+  "description": "Copilot-style review of the files Claude changes: a tree of changed files with +/- counts, accept/reject per file, folder or all, and a VS Code diff to revert single blocks.",
+  "author": { "name": "comertial" },
+  "homepage": "https://github.com/comertial/claude-pending-changes",
+  "repository": "https://github.com/comertial/claude-pending-changes",
+  "license": "GPL-3.0-only",
+  "keywords": ["review", "diff", "accept", "reject", "vscode"],
+  "types": "./types/index.d.ts"
+}

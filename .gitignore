@@ -1,0 +1,9 @@
+# Written by Claude Code when it loads the mod (Anthropic's API typings + tsconfig)
+.claude-plugin/types/
+tsconfig.json
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
