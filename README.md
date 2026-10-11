@@ -4,7 +4,7 @@
 
 **Review every file Claude touches, like a pull request, without leaving the terminal.**
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/github/v/tag/comertial/claude-pending-changes?sort=semver&label=version&color=blue)](CHANGELOG.md)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green)](LICENSE)
 [![Claude Code mod](https://img.shields.io/badge/Claude%20Code-mod-d97757)](https://github.com/comertial/comertial-mods)
 
