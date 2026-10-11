@@ -382,7 +382,8 @@ pending-changes/
 │  └─ index.d.ts          # the $.state contract: Tracked, Review, PluginState['pending-changes']
 ├─ CHANGELOG.md
 ├─ LICENSE               # GPL-3.0
-└─ README.md
+├─ README.md
+└─ ROADMAP.md
 ```
 
 Inside `register.tsx` the sections are, in order:
@@ -402,6 +403,8 @@ Inside `register.tsx` the sections are, in order:
 ---
 
 ## 🤝 Contributing
+
+See the [roadmap](ROADMAP.md) for what's planned and where help is wanted.
 
 <details>
 <summary><b>Development</b>: run from a local clone</summary>
