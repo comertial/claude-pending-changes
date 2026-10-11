@@ -7,6 +7,8 @@ All notable changes to this mod are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-11
+
 ### Added
 
 - A toast saying to run `/changes` when Claude Code can't seat the pane on its own because the terminal is too narrow (under 144 columns, or 110 once you've opened the pane yourself): on the first change of a batch, and at session start when files are still pending.
@@ -28,5 +30,6 @@ All notable changes to this mod are documented here. The format follows
 - `/changes` command, collapsible and compact folders, hover highlight.
 - Per-session temp review copies with cleanup on accept/reject, session end and a 24-hour sweep.
 
-[Unreleased]: https://github.com/comertial/claude-pending-changes/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/comertial/claude-pending-changes/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/comertial/claude-pending-changes/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/comertial/claude-pending-changes/releases/tag/v0.1.0
