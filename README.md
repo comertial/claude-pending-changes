@@ -1,6 +1,34 @@
+<div align="center">
+
 # pending-changes
 
-A Claude Code mod that adds a GitHub Copilot-style review flow for the files Claude changes. A docked pane lists the changed files as a tree with green/red line counts. You accept (✓) or reject (✗) changes per file, per folder or all at once. Clicking a file opens VS Code's side-by-side diff, where you can revert single blocks or edit by hand. Whatever you decide, Claude is told, so its picture of the code never drifts from what's actually on disk.
+**Review every file Claude touches, like a pull request, without leaving the terminal.**
+
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](CHANGELOG.md)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green)](LICENSE)
+[![Claude Code mod](https://img.shields.io/badge/Claude%20Code-mod-d97757)](https://github.com/comertial/comertial-mods)
+
+<img src="assets/demo.gif" alt="pending-changes demo: Claude edits files, the review pane lists them, changes are reverted in VS Code and rejected with one click" width="900">
+
+</div>
+
+Claude just edited five files. Which ones? What changed? How do you undo only the bad part?
+
+**pending-changes** docks a GitHub Copilot-style review pane next to your chat. Every file Claude creates, edits or deletes shows up as a tree with green/red line counts. Accept or reject per file, per folder or all at once, or open a side-by-side VS Code diff to revert single blocks. Whatever you decide, **Claude is told**, so its picture of the code never drifts from what's actually on disk.
+
+```
+/plugin install pending-changes --marketplace comertial/comertial-mods
+```
+
+## ✨ Highlights
+
+| | |
+| --- | --- |
+| 🌳 **Changes as a tree** | Every changed file with `+added -removed` counts, `new` and `deleted` tags, and collapsible, compact folders. |
+| ✅ **One-click accept / reject** | Per file, per folder or everything. Reject restores originals, deletes new files (and the empty folders Claude made for them) and brings deleted files back. |
+| 🔍 **Real diffs in VS Code** | Click a file for a side-by-side diff. Revert single blocks or edit by hand; the pane updates within ~2 seconds. |
+| 🐚 **Catches shell changes too** | Not just Edit/Write: formatters, codegen, `git checkout`, `npm install`, scripts. Anything that moves in `git status` is tracked. |
+| 🧠 **Claude stays in sync** | Every reject, revert or hand edit is reported back to Claude, so it never works from a stale picture of your code. |
 
 ```
 ▾ demo/config/                        +4 -0  [ ✓ ] [ ✗ ]
@@ -19,126 +47,156 @@ t̶e̶s̶t̶.̶j̶s̶o̶n̶  deleted                     +0 -3  [ ✓ ] [ ✗ ]
 
 ## Contents
 
-1. [Installation](#installation)
-2. [Using it](#using-it)
-3. [What gets tracked](#what-gets-tracked)
-4. [How it works](#how-it-works)
-5. [Keeping Claude in sync](#keeping-claude-in-sync)
-6. [Temp files and cleanup](#temp-files-and-cleanup)
-7. [Design decisions](#design-decisions)
-8. [Limitations](#limitations)
-9. [File layout](#file-layout)
-10. [Development](#development)
-11. [Tests](#tests)
-12. [Troubleshooting](#troubleshooting)
+- [🚀 Installation](#-installation)
+- [🎮 Using it](#-using-it)
+- [📡 What gets tracked](#-what-gets-tracked)
+- [🧠 Keeping Claude in sync](#-keeping-claude-in-sync)
+- [🚧 Limitations](#-limitations)
+- [🩺 Troubleshooting](#-troubleshooting)
+- [🔧 Under the hood](#-under-the-hood): state, hooks, diffing, shell tracking, temp files, design decisions, file layout
+- [🤝 Contributing](#-contributing): development, tests, releasing
 
 ---
 
-## Installation
+## 🚀 Installation
 
-The mod is published through the [`comertial-mods`](https://github.com/comertial/comertial-mods) marketplace. In a Claude Code session:
+Published through the [`comertial-mods`](https://github.com/comertial/comertial-mods) marketplace. In a Claude Code session:
 
 ```
 /plugin install pending-changes --marketplace comertial/comertial-mods
 ```
 
-Or from a shell, in two steps:
+Or from a shell:
 
 ```bash
 claude plugin marketplace add comertial/comertial-mods
 claude plugin install pending-changes@comertial-mods --scope user
 ```
 
-`--scope user` loads it in every session, in any project. Check it with `claude plugin list`, which should show `pending-changes@comertial-mods` with `Status: ✔ enabled`.
+`--scope user` loads it in every session, in any project. Verify with `claude plugin list`: it should show `pending-changes@comertial-mods` with `Status: ✔ enabled`.
 
-To update to a newer release: `claude plugin marketplace update comertial-mods`, then `claude plugin update pending-changes@comertial-mods`. To remove it: `claude plugin uninstall pending-changes@comertial-mods`.
+| | |
+| --- | --- |
+| **Update** | `claude plugin marketplace update comertial-mods`, then `claude plugin update pending-changes@comertial-mods` |
+| **Remove** | `claude plugin uninstall pending-changes@comertial-mods` |
 
-Requirements:
+**Requirements**
 
-- **VS Code's `code` command on PATH**, to open the diff view. Without it, clicking a file shows a toast.
-- **git**, for tracking changes made by shell commands. Without it, only plain delete commands are tracked.
-- **A terminal at least 110 columns wide** for the pane to dock beside the chat. It opens on its own once the terminal is 144 columns or wider. Below that it waits, and `/changes` opens it at any width.
-
+- **VS Code's `code` command on PATH** for the diff view. Without it, clicking a file shows a toast.
+- **git (strongly recommended, not required).** Run Claude inside a git repo to track everything its shell commands change. Without git, the mod still works: Edit, Write and NotebookEdit are fully tracked, but shell commands are caught only for files already listed and for plain deletes of named files (see [Limitations](#-limitations)).
 ---
 
-## Using it
+## 🎮 Using it
 
 ### The pane
 
-The pane opens on its own the first time Claude changes a file in the project. You can also open it any time with:
+It opens on its own the first time Claude changes a file in the project, or any time with **`/changes`**.
 
-```
-/changes
-```
+| | Where it shows |
+| --- | --- |
+| **`/changes`** | At any width: docked beside the chat on a wide fullscreen terminal (110+ columns), otherwise below the chat, above the prompt. |
+| **On its own** | Claude Code only seats a pane a mod opens unprompted from 144 columns (110 once you've opened it with `/changes`, until you close it by hand). On a narrower terminal it waits, and a toast tells you to run `/changes`. |
 
 | Element | What it does |
 | --- | --- |
-| **File row** | Shows the file name, a `new` tag for files Claude created, or a red `deleted` tag (struck-through name) for files Claude deleted, then its green `+added` and red `-removed` line counts. |
-| **File name (click)** | Opens the VS Code diff for that file (see below). |
-| **✓ on a file** | Accepts the change: removes the file from the list. The change is already on disk, so nothing else happens. |
-| **✗ on a file** | Rejects the change: restores the original content, deletes a file Claude created (and any folders Claude created that are now empty), or recreates a file Claude deleted. Then Claude is told. |
-| **Folder row** | Folder name in bold color with ▾ (expanded) or ▸ (collapsed), plus the combined counts of everything under it. |
-| **Folder name (click)** | Collapses or expands the folder. The collapsed state survives mod reloads. |
-| **✓ / ✗ on a folder** | Accepts or rejects every file under that folder, including subfolders. |
+| **File row** | File name, a `new` tag for files Claude created or a red `deleted` tag (struck-through name) for files Claude deleted, then green `+added` and red `-removed` counts. |
+| **File name (click)** | Opens the VS Code diff for that file. |
+| **✓ on a file** | Accepts: removes it from the list. The change is already on disk, so nothing else happens. |
+| **✗ on a file** | Rejects: restores the original, deletes a file Claude created (plus any now-empty folders Claude created), or recreates a file Claude deleted. Then Claude is told. |
+| **Folder row** | Bold colored name with ▾ (expanded) or ▸ (collapsed), plus the combined counts of everything under it. |
+| **Folder name (click)** | Collapses or expands it. The state survives mod reloads. |
+| **✓ / ✗ on a folder** | Accepts or rejects every file under it, including subfolders. |
 | **Accept all / Reject all** | The same for every file in the list. |
 | **Hover** | The row under the mouse gets a grey background, so it's clear which ✓/✗ belongs to which file. |
 
-Layout details:
-
-- **Order:** folders come before files, each sorted by name.
-- **Compact folders:** a folder that contains only one other folder is merged into a single row (`▾ demo/config/`), like VS Code's compact folders.
-- **Tree guides:** dim `├─`, `└─` and `│` lines show nesting below the top level.
-- **Long names** are trimmed from the left with `…`.
+**Layout:** folders come before files, each sorted by name. A folder containing only one other folder is merged into one row (`▾ demo/config/`), like VS Code's compact folders. Dim `├─` `└─` `│` guides show nesting below the top level. Long names are trimmed from the left with `…`.
 
 ### The diff view
 
 Clicking a file runs `code --diff <original> <file>`:
 
-- **Left (read-only):** a temp copy of the file as it was before Claude touched it. For a new file it's empty.
-- **Right (editable):** the real file in your project. For a deleted file it's an empty stand-in.
+- **Left (read-only):** a temp copy of the file before Claude touched it (empty for a new file).
+- **Right (editable):** your real project file (an empty stand-in for a deleted file).
 
-In VS Code you can:
+Revert single blocks with the gutter arrow between the sides (VS Code calls it "Revert Block"; it copies the original block back over Claude's version), edit the right side by hand, and save. Saves go straight to your project file. Within about 2 seconds:
 
-- **Revert single blocks** with the arrow in the gutter between the two sides (VS Code calls it "Revert Block"). This copies the original block back over Claude's version.
-- **Edit the right side by hand.**
-- **Save.** Saves go straight to your project file.
-
-Then, within about 2 seconds:
-
-- the line counts in the pane update;
-- if you reverted **every** block of an existing file, it matches its original again and drops off the list, and Claude is told you reverted it;
-- if you reverted **every** block of a **new** file (leaving it empty), that counts as rejecting it: the file is deleted along with any now-empty folders Claude created for it, and Claude is told.
+- the pane's line counts update;
+- if you reverted **every** block of an existing file, it matches its original, drops off the list, and Claude is told you reverted it;
+- if you reverted **every** block of a **new** file (leaving it empty), it counts as a reject: the file and any now-empty folders Claude created for it are deleted, and Claude is told.
 
 ---
 
-## What gets tracked
+## 📡 What gets tracked
 
-Only files **inside the session's working directory** are tracked. Scratch scripts in temp folders and files elsewhere are ignored.
+Only files **inside the session's working directory**. Scratch scripts in temp folders and files elsewhere are ignored.
 
 | Source of the change | How it's caught |
 | --- | --- |
-| Claude's **Edit**, **Write**, **NotebookEdit** tools | Directly: the mod hooks each call, saves the file's original before the first touch, and recomputes the diff after. |
-| Claude's **Bash** / **PowerShell** commands, in a git work tree | `git status` before and after each command that might write. Anything that moved is tracked: edits, new files, deletions, renames (shown as a delete plus a new file), `git checkout`/`restore`, formatters, codegen, `npm install`, scripts. How the command is written doesn't matter. |
-| Claude's shell commands, **outside** git | Only plain delete commands on files: `rm`, `del`, `erase`, `Remove-Item`, `ri`. |
-| **Your own edits** to a file that's already listed | The 2-second refresh updates the counts, and Claude is told on your next message. |
+| Claude's **Edit**, **Write**, **NotebookEdit** | Directly: each call is hooked, the file's original is saved before the first touch, and the diff is recomputed after. |
+| Claude's **Bash** / **PowerShell**, in a git work tree | `git status` before and after each command that might write. Edits, new files, deletions, renames (shown as delete + new), `git checkout`/`restore`, formatters, codegen, `npm install`, scripts. How the command is written doesn't matter. |
+| Claude's shell commands, **outside** git | Only files already in the list, plus plain deletes of named files: `rm`, `del`, `erase`, `Remove-Item`, `ri`. |
+| **Your own edits** to a listed file | The 2-second refresh updates the counts, and Claude is told on your next message. |
 
-Not tracked: files git ignores (`node_modules`, build output, `.env`), files outside the project, and your edits to files that aren't in the list.
+Not tracked: gitignored files (`node_modules`, build output, `.env`), files outside the project, and your edits to files that aren't listed.
 
-### Multi-round changes
-
-The original is saved the **first** time Claude touches a file. Later edits, in the same turn or later turns, add to the same diff. The pane always shows the **net** change from that first original. If Claude edits a file and later changes it back, the file disappears from the list, because there's nothing left to review.
-
-Files stay listed across prompts until you resolve them.
+**Multi-round changes.** The original is saved the **first** time Claude touches a file; later edits, in the same turn or later ones, add to the same diff. The pane always shows the **net** change from that first original, so a file Claude changes and then changes back disappears. Files stay listed across prompts until you resolve them.
 
 ---
 
-## How it works
+## 🧠 Keeping Claude in sync
 
-The mod is one hooks module (`hooks/register.tsx`) plus pure helper files. It runs inside Claude Code's plugin environment, which has no Node or DOM. Everything outside the module is reached through the engine interface `$` (`$.fs`, `$.process`, `$.state`, `$.ui`, `$.clock` and so on).
+Notes are delivered to Claude as hidden context (Claude reads them; your chat doesn't show them), at whichever comes first: **the next tool result** if Claude is mid-task, or **your next message**.
 
-### State
+| Event | Note Claude receives |
+| --- | --- |
+| You reject a change | "The user rejected your changes to `X`: it is back to its content from before you edited it. Re-read it before editing it again." |
+| You reject a new file | "The user rejected your new file `X`: it has been deleted." |
+| You reject a deletion | "The user rejected your deletion of `X`: it has been restored." |
+| You revert every block in the diff | "The user reverted all your changes to `X`…" (or the new-file rejection above) |
+| You edit a listed file yourself | "The user modified `X` after your last edit; re-read it before editing it again." |
+| You delete a listed file yourself | "The user deleted `X` after your last edit." |
+| You accept | Nothing. |
 
-All state lives in `$.state` (the session's state, which survives a mod reload). It's declared in `types/index.d.ts`:
+"You modified" notes come from comparing each file's current content to `lastSeenByClaude` when you send a message; each change is reported once. As a backstop, Claude Code's Edit tool already refuses to edit a file that changed since Claude last read it.
+
+---
+
+## 🚧 Limitations
+
+- **Gitignored files** and files outside the project are never tracked, by design.
+- **Non-git folders:** shell commands are tracked only for files already in the list and for plain `rm`/`del`/`Remove-Item` of named files. Edits and new files made by shell commands are missed, as are deletes using globs or variables, inside scripts, or of whole folders. Run inside a git repo for full tracking.
+- **Committed inside one command:** a clean file that is changed **and committed** within a single command never shows in `git status`, so it's invisible.
+- **Dirty-file snapshot cap:** at most 500 already-changed files are saved before a shell command. In a repo with more uncommitted changes than that, the rest have no "before" content.
+- **Concurrent edits:** if you save a file in VS Code while one of Claude's shell commands is running, the change is attributed to Claude. It still shows up for review.
+- **The 2-second refresh** reads every listed file each tick. Fine for normal use; hundreds of large files would make it heavier.
+- **Collapsed folders are remembered by path:** a folder that disappears and later comes back reappears collapsed.
+- **State is per session:** a new session starts with an empty list. Pending changes from a previous session are just files on disk, no longer listed.
+- **Untestable timing:** the fix for the refresh race can't be covered by a test, because the test kit doesn't run the timer in the middle of a tool call. It's reasoned from the code.
+
+---
+
+## 🩺 Troubleshooting
+
+| Symptom | Likely cause / fix |
+| --- | --- |
+| The pane doesn't appear | The terminal is too narrow for Claude Code to open it unprompted (see [The pane](#the-pane)); a toast says so. Run `/changes`, which opens it at any width. |
+| Clicking a file does nothing / toast "Could not open VS Code" | `code` isn't on PATH. In VS Code: *Command Palette → Shell Command: Install 'code' command in PATH*. |
+| Counts don't update after saving in VS Code | The refresh timer isn't running. Any tool call, prompt or `/changes` restarts it. If it persists, check `claude --debug` for `pending-changes` lines. |
+| A shell change wasn't listed | The file is gitignored, outside the project, or the folder isn't a git repo (only plain deletes are caught there). Or the command matched the read-only list. |
+| The hook seems to run twice | The installed copy and a `--plugin-dir` / session dev copy are both loaded. Use one. |
+| A diff tab shows "deleted" | Its temp file was cleaned up after accept/reject. Close the tab. |
+| `test.json` shows `+3 -2` after a PowerShell edit | Windows PowerShell 5.1's `-Encoding utf8` adds a byte-order mark to the first line. That's the command, not the mod. |
+
+---
+
+## 🔧 Under the hood
+
+The mod is one hooks module (`hooks/register.tsx`) plus pure helper files. It runs inside Claude Code's plugin environment, which has no Node or DOM; everything outside the module is reached through the engine interface `$` (`$.fs`, `$.process`, `$.state`, `$.ui`, `$.clock` and so on).
+
+<details>
+<summary><b>State</b>: what's stored and where</summary>
+
+All state lives in `$.state` (the session's state, which survives a mod reload), declared in `types/index.d.ts`:
 
 | Value | Type | Purpose |
 | --- | --- | --- |
@@ -159,7 +217,10 @@ A `Tracked` entry holds:
 
 The pane is drawn from this state, so any write to it redraws the pane automatically.
 
-### Hooks
+</details>
+
+<details>
+<summary><b>Hooks</b>: what runs when</summary>
 
 | Hook | Role |
 | --- | --- |
@@ -170,7 +231,10 @@ The pane is drawn from this state, so any write to it redraws the pane automatic
 | `prompt.submit` | Delivers queued notices, plus "you modified X" notes for files you edited, as hidden context on your next message. |
 | `ui.render` (`Pane`) | Draws the tree. |
 
-### The line counts (`hooks/diff.ts`)
+</details>
+
+<details>
+<summary><b>Line counts</b>: a hand-written Myers diff (<code>hooks/diff.ts</code>)</summary>
 
 `countChanges(before, after)` runs a Myers O(ND) line diff:
 
@@ -181,14 +245,15 @@ The pane is drawn from this state, so any write to it redraws the pane automatic
 
 It's written by hand because npm packages aren't available in the mod environment. Past 20,000 edits it falls back to treating all remaining lines as changed.
 
-### "Settling" an entry
+</details>
+
+<details>
+<summary><b>Settling</b> an entry and the <b>2-second refresh</b></summary>
 
 Every place that observes a file's current content calls `settle(key, base, current, seenByClaude)`:
 
 - **If `current === original`**, the entry is dropped: nothing left to review.
 - **Otherwise** the counts are recomputed and the entry is written, including `isDeleted` when `current === null`. If nothing visible changed, it skips the write, so the pane doesn't redraw for nothing.
-
-### The 2-second refresh
 
 `ensurePolling()` starts a `$.clock.every(2000)` timer. It's called from **every** hook, not just `session.start`, because a hot reload drops the old timer and doesn't always fire `session.start` again. On each tick, for each tracked file:
 
@@ -198,6 +263,11 @@ Every place that observes a file's current content calls `settle(key, base, curr
 4. A failure on one file skips just that file.
 
 The refresh **pauses while any of Claude's writing tool calls is running** (the `toolsInFlight` counter). Otherwise it could see Claude's change half-done, for example a delete that landed before the after-command check, and report it as yours.
+
+</details>
+
+<details>
+<summary><b>Tracking shell commands</b>: <code>git status</code> before and after</summary>
 
 ### Tracking shell commands
 
@@ -219,9 +289,12 @@ For each Bash/PowerShell call, `tool.call` does this:
 
 Failed commands are still compared, because they may have changed files before failing.
 
-Why this design: a full copy of the repo would be too slow for large repos, and parsing commands misses scripts and tools. `git status` is fast because git keeps an index, it already skips ignored files, and it sees every change regardless of how it was made.
+**Why this design:** a full copy of the repo would be too slow for large repos, and parsing commands misses scripts and tools. `git status` is fast because git keeps an index, it already skips ignored files, and it sees every change regardless of how it was made.
 
-### Accept and reject
+</details>
+
+<details>
+<summary><b>Accept and reject</b>: what actually happens on disk</summary>
 
 - **Accept:** drop the entry and delete its temp review copy. The file on disk is already right.
 - **Reject:**
@@ -234,30 +307,10 @@ Why this design: a full copy of the repo would be too slow for large repos, and 
 
 **Folder ownership:** when Claude creates a file, the mod records which folders didn't exist yet. A folder created by an earlier pending write of Claude's also counts. So two new files in a new folder both "own" it, and rejecting both removes it. A folder that existed before is never removed.
 
----
+</details>
 
-## Keeping Claude in sync
-
-Each note queued for Claude is delivered as hidden context. Claude reads it but it isn't shown in your chat. It goes out at whichever comes first:
-
-- **the next tool result** in the current turn, if Claude is mid-task;
-- **your next message.**
-
-| Event | Note Claude receives |
-| --- | --- |
-| You reject a change | "The user rejected your changes to `X`: it is back to its content from before you edited it. Re-read it before editing it again." |
-| You reject a new file | "The user rejected your new file `X`: it has been deleted." |
-| You reject a deletion | "The user rejected your deletion of `X`: it has been restored." |
-| You revert every block in the diff | "The user reverted all your changes to `X`…" (or the new-file rejection above) |
-| You edit a listed file yourself | "The user modified `X` after your last edit; re-read it before editing it again." |
-| You delete a listed file yourself | "The user deleted `X` after your last edit." |
-| You accept | Nothing. |
-
-The "you modified" notes come from comparing each file's current content to `lastSeenByClaude` when you send a message. Each change is reported once. As a backstop, Claude Code's Edit tool already refuses to edit a file that changed since Claude last read it.
-
----
-
-## Temp files and cleanup
+<details>
+<summary><b>Temp files and cleanup</b></summary>
 
 Review copies live in `%TEMP%\claude-pending-changes\<session id>\`, mirroring the project's folders:
 
@@ -266,17 +319,16 @@ Review copies live in `%TEMP%\claude-pending-changes\<session id>\`, mirroring t
 
 | When | What's deleted |
 | --- | --- |
-| A file is accepted, rejected, or drops off the list | Its `.original` copy |
+| A file is accepted, rejected, or drops off the list | Its `.original` copy and `.deleted` stand-in |
 | The session ends (`/exit`, `/clear`) | The whole session folder |
 | A session starts | Other sessions' folders older than 24 hours (in case of a crash) |
 
 A VS Code diff tab left open after its temp file is deleted shows the file as deleted; close the tab.
 
----
+</details>
 
-## Design decisions
-
-Why the mod works the way it does, including the approaches that were tried and dropped.
+<details>
+<summary><b>Design decisions</b>: why it works this way, including what was tried and dropped</summary>
 
 1. **Changes on disk, Copilot-style.** Claude's edits are applied immediately, so builds and tests see them. ✓ only clears the record, and ✗ undoes the change. We considered holding changes in a staging area until accepted, and rejected it: Bash, grep and test runs would see stale files, and Claude couldn't verify its own work.
 
@@ -290,11 +342,7 @@ Why the mod works the way it does, including the approaches that were tried and 
 
 6. **Temp cleanup** is done per file, per session and by a 24-hour sweep.
 
-7. **Tree view.** First a flat list. Then:
-   - folders with combined totals and their own ✓/✗;
-   - compact single-child folder chains;
-   - collapse and expand by clicking the folder name, remembered in `$.state`;
-   - bold colored folder names and dim tree guides, to tell folders from files.
+7. **Tree view.** First a flat list. Then: folders with combined totals and their own ✓/✗; compact single-child folder chains; collapse and expand by clicking the folder name, remembered in `$.state`; bold colored folder names and dim tree guides, to tell folders from files.
 
 8. **Empty-folder cleanup.** Rejecting new files removes the folders Claude created for them, once empty. This needed ownership shared across files in the same new folder (a bug caught by tests).
 
@@ -312,36 +360,24 @@ Why the mod works the way it does, including the approaches that were tried and 
 
 14. **Published through a shared marketplace.** This repository is the plugin alone. The catalog lives in [`comertial/comertial-mods`](https://github.com/comertial/comertial-mods), so later mods join the same `comertial-mods` marketplace and users add it only once.
 
----
+</details>
 
-## Limitations
-
-- **Gitignored files** and files outside the project are never tracked, by design.
-- **Non-git folders:** only plain `rm`/`del`/`Remove-Item` of named files is caught. Deletes built from variables, inside scripts, or of whole folders are missed.
-- **Committed inside one command:** a file that was clean, then changed **and committed** within a single command, is invisible, because it never shows in `git status`.
-- **Dirty-file snapshot cap:** at most 500 already-changed files are saved before a shell command. In a repo with more uncommitted changes than that, the rest have no "before" content.
-- **Concurrent edits:** if you save a file in VS Code while one of Claude's shell commands is running, the change is attributed to Claude. It still shows up for review.
-- **VS Code's labels:** the per-block button says "Revert Block" and can't be renamed.
-- **The 2-second refresh** reads every listed file each tick. Fine for normal use; a list of hundreds of large files would make it heavier.
-- **Collapsed folders are remembered by path:** a folder that disappears and later comes back reappears collapsed.
-- **State is per session:** a new session starts with an empty list. Pending changes from a previous session are just files on disk, no longer listed.
-- **Untestable timing:** the fix for the refresh race couldn't be covered by a test, because the test kit doesn't run the timer in the middle of a tool call. It's reasoned from the code.
-
----
-
-## File layout
+<details>
+<summary><b>File layout</b></summary>
 
 ```
 pending-changes/
 ├─ .claude-plugin/
 │  └─ plugin.json         # name, version, description, "types": "./types/index.d.ts"
+├─ assets/
+│  └─ demo.gif            # the README demo
 ├─ hooks/
 │  ├─ hooks.json          # { "modules": ["./register.tsx"] }
 │  ├─ register.tsx        # the hooks module: state, actions, polling, shell tracking, pane
 │  ├─ diff.ts             # Myers line diff: countChanges(), lines()
 │  ├─ commands.ts         # isReadOnlyCommand(), deleteTargets(), words(): pure, no host access
 │  ├─ ids.ts              # idOf(), folderId(): stable element keys for buttons
-│  └─ pending-changes.test.ts  # 25 tests run by `claude plugin test`
+│  └─ pending-changes.test.ts  # tests run by `claude plugin test`
 ├─ types/
 │  └─ index.d.ts          # the $.state contract: Tracked, Review, PluginState['pending-changes']
 ├─ CHANGELOG.md
@@ -361,9 +397,14 @@ Inside `register.tsx` the sections are, in order:
 8. shell commands (`beforeShell`, `afterShell`, git helpers);
 9. hooks.
 
+</details>
+
 ---
 
-## Development
+## 🤝 Contributing
+
+<details>
+<summary><b>Development</b>: run from a local clone</summary>
 
 Clone the repository and load the clone directly. If you installed the mod from the marketplace, uninstall it first.
 
@@ -392,13 +433,14 @@ claude plugin validate ./claude-pending-changes
 claude plugin test ./claude-pending-changes
 ```
 
-Type-checking: once the engine has loaded the mod from a folder it watches, it writes `.claude-plugin/types/` and a `tsconfig.json`, so `tsc -p <folder>` works. Otherwise use a `tsconfig.json` kept **outside** the mod folder. Its `include` names the engine's `claude-code.d.ts` (written by the plugin-authoring skill) plus this folder's `hooks` and `types`, with `"jsx": "react", "jsxFactory": "h"`.
+**Type-checking:** once the engine has loaded the mod from a folder it watches, it writes `.claude-plugin/types/` and a `tsconfig.json`, so `tsc -p <folder>` works. Otherwise use a `tsconfig.json` kept **outside** the mod folder. Its `include` names the engine's `claude-code.d.ts` (written by the plugin-authoring skill) plus this folder's `hooks` and `types`, with `"jsx": "react", "jsxFactory": "h"`.
 
-Debugging: run `claude --debug`. A hook that throws is skipped and logged. A pane tree that doesn't validate is logged as `ui.render (Pane): a hook returned a tree that does not validate`, with the reason.
+**Debugging:** run `claude --debug`. A hook that throws is skipped and logged. A pane tree that doesn't validate is logged as `ui.render (Pane): a hook returned a tree that does not validate`, with the reason.
 
----
+</details>
 
-## Tests
+<details>
+<summary><b>Tests</b>: tests against the real engine</summary>
 
 `claude plugin test` runs `hooks/pending-changes.test.ts` against the real engine, with an in-memory host under the plugin. It mocks:
 
@@ -407,7 +449,7 @@ Debugging: run `claude --debug`. A hook that throws is skipped and logged. A pan
 - **the clock:** moved by hand;
 - **Edit/Write/Bash:** each Bash command runs a scripted change to the in-memory disk.
 
-What the 25 tests cover:
+What the tests cover:
 
 - **Diff counts:** line counts; multi-round edits accumulating against the first original; a file edited back to its original dropping off.
 - **Scope:** files outside the working directory are ignored.
@@ -420,18 +462,18 @@ What the 25 tests cover:
   - Emptying a new file rejects it, including its new folders.
   - A file Claude created empty is not rejected.
   - An existing file reverted to its original drops off and Claude is told.
+  - Resolving a deleted file removes its empty stand-in too.
 - **Notes to Claude:** the next prompt reports your edits, once.
-- **Tree:**
-  - folders, merged chains and totals;
-  - tree guides;
-  - collapse and expand.
+- **Tree:** folders, merged chains and totals; tree guides; collapse and expand.
 - **Folder actions:**
   - Folder ✗ rejects its files and removes Claude-created folders, but keeps folders that already existed.
   - Folder ✓ accepts only that folder.
 - **Refresh** runs even when `session.start` never fired.
+- **Narrow terminals:** a toast says to run `/changes` when the pane can't be seated, once per batch and at session start; none when it is.
 - **Shell tracking:**
   - read-only detection and delete-target parsing;
   - a committed file deleted by a command shows as deleted, and ✗ restores it;
+  - a command that restores a listed file removes its review copy;
   - a command that rewrites a committed file and creates a new file in a new folder is fully caught;
   - a file you had already changed keeps *your* version as its original;
   - read-only commands run no `git status`;
@@ -440,23 +482,10 @@ What the 25 tests cover:
 
 One quirk of the test kit: it hands the file-system hooks native Windows paths (`C:\repo\a.txt`), so the test host normalizes paths before using them.
 
----
+</details>
 
-## Troubleshooting
-
-| Symptom | Likely cause / fix |
-| --- | --- |
-| The pane doesn't appear | The terminal is under 110 columns (the pane waits). Widen it or run `/changes`. |
-| Clicking a file does nothing / toast "Could not open VS Code" | `code` isn't on PATH. In VS Code: *Command Palette → Shell Command: Install 'code' command in PATH*. |
-| Counts don't update after saving in VS Code | The refresh timer isn't running. Any tool call, prompt or `/changes` restarts it. If it persists, check `claude --debug` for `pending-changes` lines. |
-| A shell change wasn't listed | The file is gitignored, outside the project, or the folder isn't a git repo (only plain deletes are caught there). Or the command matched the read-only list. |
-| The hook seems to run twice | The installed copy and a `--plugin-dir` / session dev copy are both loaded. Use one. |
-| A diff tab shows "deleted" | Its temp file was cleaned up after accept/reject. Close the tab. |
-| `test.json` shows `+3 -2` after a PowerShell edit | Windows PowerShell 5.1's `-Encoding utf8` adds a byte-order mark to the first line. That's the command, not the mod. |
-
----
-
-## Releasing
+<details>
+<summary><b>Releasing</b></summary>
 
 1. Bump `version` in `.claude-plugin/plugin.json` (semver).
 2. Move the `[Unreleased]` notes in `CHANGELOG.md` under the new version.
@@ -464,8 +493,10 @@ One quirk of the test kit: it hands the file-system hooks native Windows paths (
 
 Installed users pick up the new version with `claude plugin marketplace update comertial-mods`, then `claude plugin update pending-changes@comertial-mods`. If the marketplace entry in `comertial/comertial-mods` pins a `ref`, bump it there as well.
 
+</details>
+
 ---
 
-## License
+## 📄 License
 
 [GPL-3.0](LICENSE). This is an independent project, not affiliated with or endorsed by Anthropic. Claude and Claude Code are products of Anthropic.

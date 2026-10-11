@@ -45,6 +45,8 @@ type HostOptions = {
   head?: Record<string, string>
   /** What each Bash command does to the disk, by its exact text. */
   shell?: Record<string, (disk: Map<string, string>, put: (path: string, text: string) => void) => void | Promise<void>>
+  /** A terminal too narrow to seat a pane the mod opens unasked. */
+  narrow?: boolean
 }
 
 function host(on: On, initial: Record<string, string> = {}, options: HostOptions = {}) {
@@ -92,8 +94,16 @@ function host(on: On, initial: Record<string, string> = {}, options: HostOptions
     }
     return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
-  on('ui.toast', () => ({ value: undefined }))
-  on('ui.open', () => ({ value: { isPlaced: true as const } }))
+  const toasts: string[] = []
+  on('ui.toast', ($, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.open', () =>
+    options.narrow
+      ? { value: { isPlaced: false as const, reason: 'below 144 columns' } }
+      : { value: { isPlaced: true as const } },
+  )
   on('command.register', () => ({ value: { isRegistered: true } }) as never)
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('prompt.submit', ($, e) => ({ text: e.text, context: e.context ?? [] }))
@@ -110,7 +120,7 @@ function host(on: On, initial: Record<string, string> = {}, options: HostOptions
     }
     return { result: {} as never }
   })
-  return { disk, dirs, ran, clock }
+  return { disk, dirs, ran, clock, toasts }
 }
 
 function edit(file_path: string, old_string: string, new_string: string) {
@@ -492,6 +502,60 @@ test('outside git, a plain rm of a file is still caught', async ($, on) => {
   await ui.press({ key: 'reject-all' })
   expect(disk.get('/repo/notes.txt')).toBe('n\n')
   await ui.unmount()
+})
+
+test("resolving a deleted file's review removes its empty stand-in along with the original copy", async ($, on) => {
+  const head = { '/repo/test.json': '{}\n' }
+  const { disk, ran } = host(on, head, { head, shell: { 'rm test.json': d => void d.delete('/repo/test.json') } })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  await $.tool.call(bash('rm test.json'))
+  const ui = await mountPane($)
+
+  await pressText(ui, /test\.json/)
+  expect(ran.at(-1)).toEqual(['code', '--diff', `${TMP}/test.original.json`, `${TMP}/test.deleted.json`])
+  expect(disk.get(`${TMP}/test.deleted.json`)).toBe('')
+
+  await ui.press({ key: 'reject-all' })
+  expect(disk.get('/repo/test.json')).toBe('{}\n')
+  expect(disk.has(`${TMP}/test.original.json`)).toBe(false)
+  expect(disk.has(`${TMP}/test.deleted.json`)).toBe(false)
+  await ui.unmount()
+})
+
+test('a shell command that puts a listed file back at its original removes its review copy', async ($, on) => {
+  const head = { '/repo/a.txt': 'one\n' }
+  const { disk } = host(on, head, { head, shell: { 'git checkout a.txt': d => void d.set('/repo/a.txt', 'one\n') } })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  await $.tool.call(edit('/repo/a.txt', 'one', 'uno'))
+  const ui = await mountPane($)
+  await pressText(ui, /a\.txt/)
+  expect(disk.has(`${TMP}/a.original.txt`)).toBe(true)
+
+  await $.tool.call(bash('git checkout a.txt'))
+
+  expect(await isEmpty(ui)).toBe(true)
+  expect(disk.has(`${TMP}/a.original.txt`)).toBe(false)
+  await ui.unmount()
+})
+
+test('on a terminal too narrow to seat the pane, a toast says how to open it', async ($, on) => {
+  const { toasts } = host(on, { '/repo/a.txt': 'one\n' }, { narrow: true })
+  await $.tool.call(edit('/repo/a.txt', 'one', 'uno'))
+  expect(toasts).toEqual(['Claude changed files. Run /changes to review them.'])
+
+  // Later changes in the same batch don't repeat it.
+  await $.tool.call({ tool: 'Write', file_path: '/repo/b.txt', content: 'b\n' })
+  expect(toasts.length).toBe(1)
+
+  // A session starting with files still listed says how many.
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  expect(toasts.at(-1)).toBe('2 files still pending review. Run /changes to see them.')
+})
+
+test('no toast when the pane is seated', async ($, on) => {
+  const { toasts } = host(on, { '/repo/a.txt': 'one\n' })
+  await $.tool.call(edit('/repo/a.txt', 'one', 'uno'))
+  expect(toasts).toEqual([])
 })
 
 test("Claude's own deletion is not reported back to it as the user's", async ($, on) => {

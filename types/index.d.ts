@@ -2,6 +2,8 @@
 export type Review = {
   /** Temp copy of the original: the read-only left side; the source is the right. */
   originalCopy: string
+  /** Empty stand-in for the right side, written when the file was deleted at the time of opening. */
+  deletedCopy?: string
 }
 
 /** One file Claude changed that you have not resolved yet. */

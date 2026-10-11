@@ -170,6 +170,7 @@ async function cleanupReview($: $, review: Review | undefined): Promise<void> {
   if (!review) return
   const c = await ctx($)
   await removePath($, c, review.originalCopy, c.tmpRoot)
+  if (review.deletedCopy) await removePath($, c, review.deletedCopy, c.tmpRoot)
 }
 
 // ---------------------------------------------------------------- actions
@@ -220,20 +221,22 @@ async function openReview($: $, key: string): Promise<void> {
   const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
 
   // A deleted file has no right side to edit: show it against an empty stand-in.
-  let right = entry.path
+  // It is recorded on the review so resolving the file deletes it too.
+  let deletedCopy: string | undefined
   if (!(await $.fs.exists(entry.path))) {
-    right = `${c.sessionDir}${dir}/${stem}.deleted${ext}`
-    await $.fs.write(right, '')
+    deletedCopy = `${c.sessionDir}${dir}/${stem}.deleted${ext}`
+    await $.fs.write(deletedCopy, '')
   }
 
   // A review from the earlier layout (kept in $.state across the reload) has no originalCopy.
-  if (entry.review?.originalCopy && (await $.fs.exists(entry.review.originalCopy))) {
-    return openInVsCode($, c, entry.review, right)
+  const reusable = entry.review?.originalCopy && (await $.fs.exists(entry.review.originalCopy))
+  let review: Review = reusable ? entry.review! : { originalCopy: `${c.sessionDir}${dir}/${stem}.original${ext}` }
+  if (!reusable) await $.fs.write(review.originalCopy, entry.original ?? '')
+  if (deletedCopy) review = { ...review, deletedCopy }
+  if (review !== entry.review) {
+    await update($, files, all => (all[key] ? { ...all, [key]: { ...all[key]!, review } } : all))
   }
-  const review: Review = { originalCopy: `${c.sessionDir}${dir}/${stem}.original${ext}` }
-  await $.fs.write(review.originalCopy, entry.original ?? '')
-  await update($, files, all => (all[key] ? { ...all, [key]: { ...all[key]!, review } } : all))
-  await openInVsCode($, c, review, right)
+  await openInVsCode($, c, review, deletedCopy ?? entry.path)
 }
 
 /** Deletes the folders Claude's write created, deepest first, while each is empty. */
@@ -530,7 +533,8 @@ async function afterShell($: $, c: Ctx, snap: ShellSnapshot): Promise<void> {
 
     const known = tracked[key]
     if (known) {
-      await settle($, key, known, current, current)
+      const { dropped } = await settle($, key, known, current, current)
+      if (dropped) await cleanupReview($, dropped.review)
       continue
     }
     let original: string | null
@@ -542,8 +546,22 @@ async function afterShell($: $, c: Ctx, snap: ShellSnapshot): Promise<void> {
     const rel = slash(path).slice(c.cwd.length + 1)
     const createdDirs = original === null ? await shellCreatedDirs($, c, snap, rel) : undefined
     const { wasEmpty, dropped } = await settle($, key, { path, rel, original, createdDirs }, current, current)
-    if (wasEmpty && !dropped) void $.ui.open({ id: PANE, title: TITLE })
+    if (wasEmpty && !dropped) void openUnasked($, CHANGED_HINT)
   }
+}
+
+// ---------------------------------------------------------------- opening the pane
+
+const CHANGED_HINT = 'Claude changed files. Run /changes to review them.'
+
+/**
+ * Opens the pane on the mod's own initiative. The engine seats such a pane only
+ * from 144 columns (110 once the person opened it), so on a narrower terminal
+ * it waits undrawn: then a toast says how to see it.
+ */
+async function openUnasked($: $, hint: string): Promise<void> {
+  const opened = await $.ui.open({ id: PANE, title: TITLE })
+  if (!opened.isPlaced) $.ui.toast(hint, { timeoutMs: 8000 })
 }
 
 // ---------------------------------------------------------------- hooks
@@ -558,8 +576,9 @@ export const register: Register = on => {
     void ctx($)
       .then(c => sweepStale($, c))
       .catch(() => {})
-    if (Object.keys(await read($, files)).length > 0) {
-      void $.ui.open({ id: PANE, title: TITLE })
+    const pending = Object.keys(await read($, files)).length
+    if (pending > 0) {
+      void openUnasked($, `${pending} file${pending === 1 ? '' : 's'} still pending review. Run /changes to see them.`)
     }
     return next(e)
   })
@@ -634,7 +653,7 @@ export const register: Register = on => {
         const current = await readOrNull($, tracked.base.path)
         const { wasEmpty, dropped } = await settle($, tracked.key, tracked.base, current, current)
         if (dropped) await cleanupReview($, dropped.review)
-        if (wasEmpty && !dropped) void $.ui.open({ id: PANE, title: TITLE })
+        if (wasEmpty && !dropped) void openUnasked($, CHANGED_HINT)
       }
 
       // Deliver reverts the user made mid-turn with the next tool result.

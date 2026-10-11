@@ -7,6 +7,15 @@ All notable changes to this mod are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A toast saying to run `/changes` when Claude Code can't seat the pane on its own because the terminal is too narrow (under 144 columns, or 110 once you've opened the pane yourself): on the first change of a batch, and at session start when files are still pending.
+
+### Fixed
+
+- The empty `.deleted` stand-in opened as the right side of a deleted file's diff is now removed when the file is accepted, rejected or drops off the list, instead of lingering until the session ends.
+- A shell command that puts a listed file back at its original (e.g. `git checkout`) now removes that file's temp review copy.
+
 ## [0.1.0] - 2026-10-10
 
 ### Added
