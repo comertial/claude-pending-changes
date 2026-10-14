@@ -404,7 +404,7 @@ Inside `register.tsx` the sections are, in order:
 
 ## 🤝 Contributing
 
-See the [roadmap](ROADMAP.md) for what's planned and where help is wanted.
+See the [roadmap](ROADMAP.md) for what's planned and where help is wanted. This README is the reference for how the mod behaves. Features, bug fixes and research start with a short spec in [`docs/specs/`](docs/specs/README.md), and the README is updated when they ship.
 
 <details>
 <summary><b>Development</b>: run from a local clone</summary>

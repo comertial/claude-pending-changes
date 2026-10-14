@@ -4,13 +4,15 @@ Where **pending-changes** is headed. This is a direction, not a schedule: there 
 
 Have an idea or want to pick something up? [Open an issue](https://github.com/comertial/claude-pending-changes/issues) first so we can agree on the approach. Items marked **help wanted** are good places to start.
 
+Before work on an item starts, it gets a short spec in [`docs/specs/`](docs/specs/README.md).
+
 ## Now
 
 Being worked on, in priority order.
 
 - **Keep pending changes across sessions.** Today a new session starts with an empty list, and anything left unreviewed is just files on disk. Persist the list (and the originals) per project so you can pick the review back up.
 - **Lighter refresh.** The 2-second refresh re-reads every listed file on each tick. Check modification time and size first, and re-read only the files that moved.
-- **A status on every row.** Today only new and deleted files are labelled. Give every row a coloured label (green `added`, yellow `modified`, red `deleted`) and style the file name to match: underline for added, italic for modified, and the current strikethrough and dim for deleted. The styles keep each status readable without colour.
+- **A status on every row.** Today only new and deleted files are labelled. Give every row a coloured label (green `added`, yellow `modified`, red `deleted`) and style the file name to match: underline for added, italic for modified, and the current strikethrough and dim for deleted. The styles keep each status readable without colour. ([spec](docs/specs/feat-status-on-every-row.md))
 
 ## Next
 
@@ -20,7 +22,7 @@ Planned, after the items above.
 
 ## Exploring
 
-Ideas we like but haven't committed to. They need research or more demand before they're planned.
+Ideas we like but haven't committed to. They need research or more demand before they're planned. Research gets a `research-` spec in [`docs/specs/`](docs/specs/README.md#research), which ends with each item either moving up to Next or down to Not planned.
 
 - **Accept or reject single blocks in the pane.** Review hunk by hunk without opening an editor. Needs research into what the pane can render and how it should behave.
 - **Close the diff when a change is resolved.** Accepting or rejecting a file closes its open VS Code diff. Resolving a folder closes the diffs of every file inside it, and accept all or reject all closes every diff opened from the list. `code --diff` can open a tab but not close one, so this needs research.
