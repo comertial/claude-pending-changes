@@ -26,6 +26,7 @@ Ideas we like but haven't committed to. They need research or more demand before
 - **Accept or reject single blocks in the pane.** Review hunk by hunk without opening an editor. Needs research into what the pane can render and how it should behave.
 - **Close the diff when a change is resolved.** Accepting or rejecting a file closes its open VS Code diff. Resolving a folder closes the diffs of every file inside it, and accept all or reject all closes every diff opened from the list. `code --diff` can open a tab but not close one, so this needs research.
 - **Keyboard navigation in the pane.** Move between files and accept or reject without the mouse.
+- **Cross-session file locks.** When several Claude sessions work in one checkout, warn or block a session from editing a file that another live session has pending, so they don't overwrite each other. Claude Code has no file locks of its own; its advice is git worktrees, or giving each agent different files. Edit and Write could be blocked, but Bash can't (which files a command writes isn't known until it runs), and stale locks from crashed sessions need recovery. Needs research.
 - **A configurable snapshot cap.** At most 500 already-changed files are saved before a shell command; in repos with more uncommitted changes than that, the rest have no "before" content. A setting could raise the cap, at the cost of slower commands.
 
 ## Not planned
