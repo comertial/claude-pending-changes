@@ -13,7 +13,7 @@ The one question this research must answer, phrased so the answer is yes, no, or
 What the answer unblocks or rules out.
 
 ### Constraints
-What any answer has to respect: README behaviour that must not change, Design decisions, what the engine and VS Code allow, and performance.
+What any answer has to respect: SPEC behaviour that must not change, SPEC Design decisions, what the engine and VS Code allow, and performance.
 
 ### What was tried
 Experiments, docs read and prototypes, each with the commands, links or snippets needed to repeat it, and what came of it.
@@ -32,4 +32,4 @@ Go or no-go, and the option to take.
 Filled in once the user agrees with the recommendation. Then this file is deleted.
 
 - **Go:** move the ROADMAP item to Next or Now, and start a `feat-<slug>.md` spec that carries the findings into its Context.
-- **No-go:** move the ROADMAP item to "Not planned" with a one-line reason. If the reason will matter later, add a README Design decision.
+- **No-go:** tag the last commit that has this file `archive/<slug>`, then move the ROADMAP item to "Not planned" with a one-line reason and a link to this file at that tag (see [Archiving work that didn't ship](README.md#archiving-work-that-didnt-ship)). If the reason will matter later, add a SPEC Design decision.

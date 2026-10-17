@@ -17,16 +17,16 @@ The problem, and why it's worth solving now.
 -
 
 ### Affected behaviour
-Every README section and existing test this change touches. Mark each one **changes** or **must not change**.
+Every SPEC section and existing test this change touches. Mark each one **changes** or **must not change**.
 
-| README section | Changes / must not change | Guarded by (existing tests) |
+| SPEC section | Changes / must not change | Guarded by (existing tests) |
 | --- | --- | --- |
 | | | |
 
-Note any conflict with a [Design decision](../../README.md#-under-the-hood) here, with the reason for it.
+Note any conflict with a [Design decision](../SPEC.md#design-decisions) here, with the reason for it.
 
 ### New behaviour
-What the user sees and what Claude is told, as the README will describe it.
+What the user sees and what Claude is told, as the SPEC will describe it.
 
 ### Acceptance criteria
 Each one is testable and becomes a test.

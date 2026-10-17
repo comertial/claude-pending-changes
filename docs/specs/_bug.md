@@ -16,7 +16,7 @@ Exact steps, starting from a clean session. Include the OS, the terminal width, 
 1.
 
 ### Expected
-What should happen. Quote or link the README section that describes it. If the README doesn't say, write that down: the bug has also found a gap in the spec, and the fix must fill it.
+What should happen. Quote or link the SPEC section that describes it. If the SPEC doesn't say, write that down: the bug has also found a gap in the spec, and the fix must fill it.
 
 ### Actual
 What happens instead. Include any error text, toast or `claude --debug` log line.
@@ -25,9 +25,9 @@ What happens instead. Include any error text, toast or `claude --debug` log line
 Where and why it goes wrong, with `file:line`. Leave this as "unknown" until the cause has been confirmed, not just guessed.
 
 ### Affected behaviour
-The README sections and existing tests near the fix. Mark each one **changes** or **must not change**.
+The SPEC sections and existing tests near the fix. Mark each one **changes** or **must not change**.
 
-| README section | Changes / must not change | Guarded by (existing tests) |
+| SPEC section | Changes / must not change | Guarded by (existing tests) |
 | --- | --- | --- |
 | | | |
 

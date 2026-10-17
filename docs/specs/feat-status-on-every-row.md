@@ -20,14 +20,14 @@ Only new files (a dim `new` tag) and deleted files (a red `deleted` tag with a s
 
 ### Affected behaviour
 
-| README section | Changes / must not change | Guarded by (existing tests) |
+| SPEC section | Changes / must not change | Guarded by (existing tests) |
 | --- | --- | --- |
-| Highlights table, "Changes as a tree" | **changes**: `new`/`deleted` tags become a status on every file | — |
-| Highlights ASCII mock | **changes**: `new` → `added`, `modified` added to edited rows | — |
+| README Highlights table, "Changes as a tree" | **changes**: `new`/`deleted` tags become a status on every file | — |
+| README Highlights ASCII mock | **changes**: `new` → `added`, `modified` added to edited rows | — |
 | The pane, "File row" | **changes**: three labels, colours and name styles | ` deleted` assertions in `hooks/pending-changes.test.ts` (around lines 442 and 501) |
 | The pane, "Folder row" | **must not change** | Tree tests (folders, merged chains, totals) |
 | The pane, Layout (trimming long names) | **must not change**, and nothing wraps at about 110 columns | — |
-| Design decision 12 (deleted files look) | **must not change**: strikethrough + dim + red `deleted` stays | ` deleted` assertions |
+| The pane, "File row": the deleted file look | **must not change**: strikethrough + dim + red `deleted` stays | ` deleted` assertions |
 
 There is no conflict with the Design decisions.
 

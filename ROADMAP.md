@@ -33,6 +33,6 @@ Ideas we like but haven't committed to. They need research or more demand before
 
 Considered and decided against, for now. Open an issue if you have a strong case.
 
-- **Holding changes in a staging area until accepted.** Builds, tests and Claude itself would see stale files. Changes go straight to disk; see design decision 1 in the [README](README.md#-under-the-hood).
+- **Holding changes in a staging area until accepted.** Builds, tests and Claude itself would see stale files. Changes go straight to disk; see design decision 1 in the [SPEC](docs/SPEC.md#design-decisions).
 - **Tracking gitignored files or paths outside the working directory.** Keeping the scope to the project's tracked files is what keeps the mod fast and predictable.
 - **Full shell tracking outside git.** `git status` is what lets the mod see every change a command makes, quickly and however it was made. Without git, only plain deletes and files already in the list are caught. Run Claude inside a git repo (`git init` is enough) for full tracking.

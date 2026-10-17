@@ -27,11 +27,14 @@
 - Add one test that writes a new file, edits a tracked file and deletes a committed one, then mounts the pane. Through `ui.find(...)` and its `props`, assert criteria 1–4: the label text, colour and name style for each status, and no label on folder rows.
 - The existing ` deleted` assertions must keep passing. Check whether any test matches ` new`: a grep found none, but confirm before removing it.
 
-### README merge
-- Highlights table, "Changes as a tree": "`new` and `deleted` tags" becomes "a coloured `added` / `modified` / `deleted` status on every file".
-- Highlights ASCII mock: `new` becomes `added`, and add `modified` to the edited rows.
+### SPEC merge
 - The pane, "File row": describe the three labels, their colours and the matching name styles.
 - Tests list, "Tree": add "a coloured status and matching name style on every file row".
+
+### README check
+- Highlights table, "Changes as a tree": "`new` and `deleted` tags" becomes "a coloured `added` / `modified` / `deleted` status on every file".
+- Highlights ASCII mock: `new` becomes `added`, and add `modified` to the edited rows.
+- The pane, "File row": the same three labels, colours and name styles as the SPEC.
 
 ### CHANGELOG / ROADMAP
 - `CHANGELOG.md` `[Unreleased]` → `### Changed`: every file row shows a coloured status (green `added`, yellow `modified`, red `deleted`), with the name styled to match (underline, italic, strikethrough). The `new` tag is renamed to `added`.
@@ -39,7 +42,7 @@
 - Delete this plan and its spec.
 
 ### Commits
-1. `feat(pane): show a coloured status on every file row`. Covers `register.tsx`, the test, README, CHANGELOG and ROADMAP, and deletes this spec and plan.
+1. `feat(pane): show a coloured status on every file row`. Covers `register.tsx`, the test, SPEC, README, CHANGELOG and ROADMAP, and deletes this spec and plan.
 
 ### Verification
 - `claude plugin validate .` and `claude plugin test .`: the new test and the existing pane tests pass.

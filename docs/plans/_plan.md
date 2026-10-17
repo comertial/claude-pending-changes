@@ -18,8 +18,11 @@ The files to change and the existing helpers to reuse, with `file:line`. For a b
 ### Tests
 New tests in `hooks/pending-changes.test.ts`, one or more per acceptance criterion in the spec. List any existing tests that need to change, and why.
 
-### README merge
-The exact README sections to update, the Tests list entries to add, and any new Design decision. A bug fix usually changes nothing here, unless the README was wrong or silent, or the fix makes a Limitations or Troubleshooting entry obsolete.
+### SPEC merge
+The exact [`docs/SPEC.md`](../SPEC.md) sections to update, the Tests list entries to add, and any new Design decision. A bug fix usually changes nothing here, unless the SPEC was wrong or silent, or the fix makes a Limitations entry obsolete.
+
+### README check
+The user-facing README sections the change touches (Highlights, Using it, What gets tracked, Keeping Claude in sync, Limitations, Troubleshooting) and how each one changes, or "none". Keep internals out of the README.
 
 ### CHANGELOG / ROADMAP
 - `CHANGELOG.md` `[Unreleased]`: `Added` / `Changed` for a feature, `Fixed` for a bug.
