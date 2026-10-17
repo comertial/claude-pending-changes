@@ -95,7 +95,7 @@ Experiments, docs read and prototypes, each with what's needed to repeat it, and
    | Latin-1 (`caf\xe9`) | **no** | yes | **no** |
 
    - Every UTF-8 text file round-trips byte-exact, line endings and BOM included.
-   - Non-UTF-8 bytes are lost **before** git is involved: `$.fs.read` decodes as UTF-8 and `$.fs.write` writes UTF-8. This is not specific to persistence. Today's ✗ follows the same read-text, write-text path, so rejecting a change to a Latin-1 file rewrites its bytes (`hooks/register.tsx:88` reads text, `:203` writes it back). This is a bug in shipped behaviour, tracked in its own GitHub issue (link to be added once it is opened).
+   - Non-UTF-8 bytes are lost **before** git is involved: `$.fs.read` decodes as UTF-8 and `$.fs.write` writes UTF-8. This is not specific to persistence. Today's ✗ follows the same read-text, write-text path, so rejecting a change to a Latin-1 file rewrites its bytes (`hooks/register.tsx:88` reads text, `:203` writes it back). This is a bug in shipped behaviour, tracked in [#3](https://github.com/comertial/claude-pending-changes/issues/3).
    - **Cost:** about 77 ms per git call on Windows (process start dominates), and 225 ms for hash + pin + release. One call per file per step is too slow for shell commands that touch many files, as the batching finding below explains.
    - *Not yet run:* POSIX.
    - **Batching** (shell, same repo, 200 CRLF files):
@@ -107,9 +107,17 @@ Experiments, docs read and prototypes, each with what's needed to repeat it, and
      - `log --all`, `branch -a` and `fsck` show nothing;
      - releasing is a rewrite without the released blobs, then gc removed them and kept the rest;
      - `update-ref <ref> <new> <old>` is compare-and-swap: a writer holding a stale `<old>` is rejected (`cannot lock ref … is at … but expected …`).
-6. *To do:* **Shards across processes.** Two sessions write shards while ticking. Confirm merges converge, no event is lost, and `$.fs.read` sees the other process's writes immediately.
-7. *To do:* **Tick cost.** Measure the per-tick shard check (stat vs read) with 1, 5 and 20 shards against design decision 7.
-8. *In progress:* **Session lifecycle.** From the types (`SessionEndInput.reason`): "`clear` is how a hook sees a `/clear`: the conversation ends, the process goes on under a new session id, and no `session.start` fires for it." So the owner id must be read with `$.session.id()` at every write, never cached at start, and a `session.end` with reason `clear` marks the old id's shard as ended. Still to confirm with the probe (`/probe-id` around `/clear` and `--resume`, logged to `scratchpad/probe/lifecycle.jsonl`): What `session.start`/`session.end` and the session id do on `/clear`, `--resume` and `--continue`, so shard ownership and "owner has ended" detection are sound (heartbeat in the shard vs `session.end` marker).
+6. **Shards across processes.** Two live sessions (this one, plus a second started with `claude --plugin-dir <pc-probe>`) ran `/probe-shards`: every 2 s each one wrote `scratchpad/exp6/shards/<session id>.json` with a counter and a timestamp, listed the folder and read the other's shard. Each tick was logged to `scratchpad/probe/session-<id>.jsonl`.
+   - Each session saw the other's writes from its first tick on; the counters advanced in step.
+   - The observed lags (A sees B ~440 ms, B sees A ~1580 ms) add up to one 2 s period. They are the phase offset between the two timers, not write visibility: a write is visible to the other process at its next tick.
+   - When the second session exited, its shard stopped updating and the first session's lag for it grew past 56 s. The shard's timestamp works as a heartbeat.
+7. **Tick cost.** With 2 shards (write own, list, read 1 peer), the tick averaged 4.2–4.3 ms, max 9 ms. With 20 shards (18 fake, 4 KB each, added while the ticker ran), it took 15–17 ms, ~0.7 ms per shard read. The feature reads only shards whose `mtimeMs`/`size` changed since the last tick (both come from `$.fs.list`), so the steady state is one list, plus the own write when something changed. Shards are bounded by live sessions plus ended ones awaiting compaction, not by repo size, so design decision 7 holds.
+8. **Session lifecycle** (same logs; the second session ran `/probe-id`, `/clear`, `/probe-id`, `/probe-shards`, `/exit`, then `claude --resume`, `/probe-id`):
+   - **`/clear`**: `session.end` fired with reason `clear` for the old id `9d1f1f97…`. `$.session.id()` returned the new id `6640dcd7…` straight after. **No `session.start` fired**, matching the types.
+   - **Cached ids go stale:** the shard timer started before `/clear` kept running (the module isn't reloaded) and kept writing the *old* id's shard, logging `idNow` as the new id. The owner id must come from `$.session.id()` at every write.
+   - **`/exit`**: `session.end` with reason `prompt_input_exit`, and timers stopped.
+   - **`--resume`**: `session.start` fired with **the same id as before the exit** (`6640dcd7…`). A resumed session keeps its id, so it naturally resumes ownership of its entries and its shard.
+   - *Not run:* `--continue` (expected to match `--resume`) and a crash (no `session.end`, so only the heartbeat reveals it).
 9. *To do:* **Test kit.** Can `claude plugin test` cover this? A fake git with objects and refs, two sessions in one test, and `options` for the settings.
 
 ### Findings
@@ -138,6 +146,12 @@ The facts the experiments established. Separate what was confirmed from what is 
   - **Release race inside one worktree.** With per-blob refs, session A could delete a ref just as session B started using the same content. Solved by the tree ref's compare-and-swap: every tree is built from the merged shards, and a swap based on a stale tree is rejected and retried.
   - **Two writes between hashing and pinning.** A blob written by `hash-object -w` is unreferenced until the tree swap lands. A `gc --prune=now` in that window could remove it. The default `gc.pruneExpire` (2 weeks) makes this practically impossible, so it is accepted.
   - **Push leaks.** Confirmed: `git push --mirror`, a `refs/*:refs/*` refspec and `git clone --mirror` copy the refs, and the originals with them. Ordinary push, `--all`, `--tags` and clone don't. The mod can't prevent this without installing a git hook in the user's repo, which is ruled out as too invasive. The README Limitations documents it, together with the one-line cleanup command.
+- **Confirmed (experiments 6–8):**
+  - Shard files written through `$.fs.write` are visible to another session's `$.fs.read` at its next tick. Per-session shards plus merge-on-read work across processes without locks.
+  - The per-tick check is a few ms and is bounded by the number of sessions, not the repo.
+  - **Owner = `$.session.id()` read at every write.** `/clear` switches the id without `session.start`, so anything cached at start goes stale. `session.end` (`clear`, `prompt_input_exit`, …) marks the old id as ended when it fires.
+  - **"Owner has ended"** = a `session.end` marker in its shard, *or* a heartbeat (shard timestamp) older than a few ticks, for crashes where `session.end` never fires. The heartbeat is written on the regular tick, so it costs nothing extra.
+  - `--resume` keeps the session id, so a resumed session takes back its entries without any handover.
 - **Confirmed (docs/types):**
   - `$.store` is unsuitable for originals (4 MiB total).
   - `$.process.run` takes `stdin`.
@@ -147,11 +161,10 @@ The facts the experiments established. Separate what was confirmed from what is 
   - blob refs don't disturb IDE graphs (VS Code, GitLens);
   - the batched calls cost the same from `$.process.run` as from the shell (measured from the shell so far);
   - POSIX behaves the same;
-  - shard writes are visible across processes at once;
-  - the tick check is cheap enough.
+  - `--continue` behaves like `--resume`.
 
 ### Recommendation
-Pending experiments 6–9 and the batching check.
+Pending experiment 9 (test kit) and the remaining checks above.
 
 ### Outcome
 Filled in once the user agrees with the recommendation. Then this file is deleted.
