@@ -7,6 +7,10 @@ All notable changes to this mod are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Every file row shows a coloured status (green `added`, yellow `modified`, red `deleted`), with the name styled to match (underline, italic, strikethrough). The `new` tag is renamed to `added`.
+
 ## [0.2.0] - 2026-10-11
 
 ### Added

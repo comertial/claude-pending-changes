@@ -72,6 +72,16 @@ function fit(text: string, room: number): string {
   return text.length <= room ? text : `…${text.slice(text.length - Math.max(1, room - 1))}`
 }
 
+type Status = 'added' | 'modified' | 'deleted'
+const statusOf = (f: Tracked): Status => (f.original === null ? 'added' : f.isDeleted ? 'deleted' : 'modified')
+const STATUS_COLOR = { added: 'success', modified: 'warning', deleted: 'error' } as const
+/** The name is styled to match its status, so the status reads without colour. */
+const NAME_STYLE = {
+  added: { underline: true },
+  modified: { italic: true },
+  deleted: { strikethrough: true, dimColor: true },
+} as const
+
 // ---------------------------------------------------------------- host io
 
 async function readOrNull($: $, path: string): Promise<string | null> {
@@ -722,7 +732,7 @@ export const register: Register = on => {
           const guide = row.guide ? <Text dimColor>{row.guide}</Text> : ''
           const added = row.kind === 'folder' ? row.node.added : row.file.added
           const removed = row.kind === 'folder' ? row.node.removed : row.file.removed
-          const room = Math.max(8, width - row.guide.length - `+${added} -${removed}`.length - 24)
+          const room = Math.max(8, width - row.guide.length - `+${added} -${removed}`.length - 25)
           const counts = [
             <Text color="success">{`+${added}`}</Text>,
             <Text color="error">{`-${removed}`}</Text>,
@@ -764,12 +774,13 @@ export const register: Register = on => {
 
           const { key, file } = row
           const id = idOf(key)
+          const status = statusOf(file)
           return (
             <Box key={`row-${id}`} flexDirection="row" gap={1} hover={{ backgroundColor: ROW_HOVER }}>
               <Button key={`open-${id}`} plain onPress={() => void openReview($, key)}>
                 {guide}
-                {file.isDeleted ? <Text strikethrough dimColor>{fit(row.name, room)}</Text> : fit(row.name, room)}
-                {file.original === null ? <Text dimColor> new</Text> : file.isDeleted ? <Text color="error"> deleted</Text> : ''}
+                <Text {...NAME_STYLE[status]}>{fit(row.name, room)}</Text>
+                <Text color={STATUS_COLOR[status]}>{` ${status}`}</Text>
               </Button>
               {leader}
               <Box flexDirection="row" gap={1} flexShrink={0}>
