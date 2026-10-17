@@ -118,7 +118,13 @@ Experiments, docs read and prototypes, each with what's needed to repeat it, and
    - **`/exit`**: `session.end` with reason `prompt_input_exit`, and timers stopped.
    - **`--resume`**: `session.start` fired with **the same id as before the exit** (`6640dcd7…`). A resumed session keeps its id, so it naturally resumes ownership of its entries and its shard.
    - *Not run:* `--continue` (expected to match `--resume`) and a crash (no `session.end`, so only the heartbeat reveals it).
-9. *To do:* **Test kit.** Can `claude plugin test` cover this? A fake git with objects and refs, two sessions in one test, and `options` for the settings.
+9. **Test kit.** A throwaway mod `pc-kit` (dev-mods folder) holds the smallest slice of the design: the two `userConfig` fields, a shard written under `$.session.id()`, an original sent to git through `stdin`, a `session.end` marker, and re-reading only shards whose `mtimeMs` changed. Its `kit.test.ts` uses the same in-memory host pattern as `hooks/pending-changes.test.ts`. `claude plugin validate` accepted the `userConfig` (a boolean, and a string with `options`), and `claude plugin test` passed 4 of 4:
+   - `test(name, { options: { openOnStart: 'toast' } }, …)` reaches `register(on, options)`, and `persistAcrossSessions: false` turns writing off;
+   - a fake `process.run` sees the git stdin at `e.init.stdin` (not `e.stdin`; the first run failed on that);
+   - `/clear` is simulated by raising `$.session.end({ reason: 'clear', … })` and switching the id the fake `session.id` answers. The end marker lands in the old shard and later writes in the new one;
+   - another session is simulated by writing its shard into the fake disk with a new mtime. It is read once per change.
+
+   One engine is one session, so a test can't run two instances of the mod. Everything the mod knows about another session comes through the disk and git, though, so faking those covers it. The fake git needs `hash-object`, `cat-file blob`, `mktree`, `update-ref` (with compare-and-swap), `for-each-ref` and `worktree list` added beside the existing `status`/`cat-file`/`ls-files`.
 
 ### Findings
 The facts the experiments established. Separate what was confirmed from what is only assumed.
@@ -152,19 +158,42 @@ The facts the experiments established. Separate what was confirmed from what is 
   - **Owner = `$.session.id()` read at every write.** `/clear` switches the id without `session.start`, so anything cached at start goes stale. `session.end` (`clear`, `prompt_input_exit`, …) marks the old id as ended when it fires.
   - **"Owner has ended"** = a `session.end` marker in its shard, *or* a heartbeat (shard timestamp) older than a few ticks, for crashes where `session.end` never fires. The heartbeat is written on the regular tick, so it costs nothing extra.
   - `--resume` keeps the session id, so a resumed session takes back its entries without any handover.
+- **Confirmed (experiment 9):** every agreed behaviour is testable with `claude plugin test`:
+  - settings through `options`;
+  - other sessions and `/clear` through a fake disk and a switchable `session.id`;
+  - git through an extended fake `process.run`.
 - **Confirmed (docs/types):**
   - `$.store` is unsuitable for originals (4 MiB total).
   - `$.process.run` takes `stdin`.
   - `userConfig` gives settings in `/config` with a reload on change.
   - Claude Code has no file locks for parallel sessions.
-- **Assumed, to verify (3–9):**
-  - blob refs don't disturb IDE graphs (VS Code, GitLens);
-  - the batched calls cost the same from `$.process.run` as from the shell (measured from the shell so far);
-  - POSIX behaves the same;
-  - `--continue` behaves like `--resume`.
+- **Assumed, left for the feature to confirm** (none can change the design; each has a fallback):
+  - IDE graphs (VS Code, GitLens) ignore a ref that points at a tree. Fallback: none needed for git itself, which ignores it in `log --all`; at worst a graph tool shows one extra ref;
+  - the batched calls cost the same from `$.process.run` as from the shell. Fallback: they already run after the tool result;
+  - POSIX behaves the same. The feature's tests run the real logic against the fake host on every platform;
+  - `--continue` behaves like `--resume`. Fallback: if it gets a new id, the old shard's heartbeat expires and ownership passes as for an ended session.
 
 ### Recommendation
-Pending experiment 9 (test kit) and the remaining checks above.
+**Go.** Every question that could have blocked the design came back positive or with a cheap fix:
+- originals persist byte-exact for UTF-8 text in git's object store;
+- one tree ref per worktree pins them invisibly, in constant time, with a compare-and-swap that removes the release race;
+- ordinary pushes and clones never carry them;
+- per-session shards in the git dir sync live sessions within one tick for a few ms;
+- the session id and `session.end` give what the ownership model needs;
+- every behaviour is testable.
+
+The one design change found (`refs/worktree/*` → a shared, worktree-scoped tree ref) is already in Agreed direction.
+
+Carry into the feature spec:
+- the agreed direction above as its behaviour;
+- these limits for SPEC and README:
+  - `push --mirror`, a `refs/*:refs/*` refspec and `clone --mirror` copy the refs;
+  - no persistence outside git or for files over 4 MiB;
+  - non-UTF-8 files stay lossy until #3 is fixed;
+- these Design decisions:
+  - every setting is a `userConfig` field with a default and a test;
+  - git work is batched and kept off the critical path;
+  - the owner id is read at every write.
 
 ### Outcome
 Filled in once the user agrees with the recommendation. Then this file is deleted.
