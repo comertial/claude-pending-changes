@@ -24,7 +24,7 @@ Claude just edited five files. Which ones? What changed? How do you undo only th
 
 | | |
 | --- | --- |
-| 🌳 **Changes as a tree** | Every changed file with `+added -removed` counts, `new` and `deleted` tags, and collapsible, compact folders. |
+| 🌳 **Changes as a tree** | Every changed file with `+added -removed` counts, a coloured `added` / `modified` / `deleted` status on every file, and collapsible, compact folders. |
 | ✅ **One-click accept / reject** | Per file, per folder or everything. Reject restores originals, deletes new files (and the empty folders Claude made for them) and brings deleted files back. |
 | 🔍 **Real diffs in VS Code** | Click a file for a side-by-side diff. Revert single blocks or edit by hand; the pane updates within ~2 seconds. |
 | 🐚 **Catches shell changes too** | Not just Edit/Write: formatters, codegen, `git checkout`, `npm install`, scripts. Anything that moves in `git status` is tracked. |
@@ -32,12 +32,12 @@ Claude just edited five files. Which ones? What changed? How do you undo only th
 
 ```
 ▾ demo/config/                        +4 -0  [ ✓ ] [ ✗ ]
-└─ settings.json  new                 +4 -0  [ ✓ ] [ ✗ ]
+└─ settings.json  added               +4 -0  [ ✓ ] [ ✗ ]
 ▾ testFolder/                        +11 -1  [ ✓ ] [ ✗ ]
 ├─ ▾ sub/                             +7 -0  [ ✓ ] [ ✗ ]
-│  ├─ deeper.json  new                +4 -0  [ ✓ ] [ ✗ ]
-│  └─ notes.md  new                   +3 -0  [ ✓ ] [ ✗ ]
-└─ test.txt                           +1 -1  [ ✓ ] [ ✗ ]
+│  ├─ deeper.json  added              +4 -0  [ ✓ ] [ ✗ ]
+│  └─ notes.md  added                 +3 -0  [ ✓ ] [ ✗ ]
+└─ test.txt  modified                 +1 -1  [ ✓ ] [ ✗ ]
 t̶e̶s̶t̶.̶j̶s̶o̶n̶  deleted                     +0 -3  [ ✓ ] [ ✗ ]
 
 5 files  +15 -4                 [ Accept all ]  [ Reject all ]
@@ -99,7 +99,7 @@ It opens on its own the first time Claude changes a file in the project, or any 
 
 | Element | What it does |
 | --- | --- |
-| **File row** | File name, a `new` tag for files Claude created or a red `deleted` tag (struck-through name) for files Claude deleted, then green `+added` and red `-removed` counts. |
+| **File row** | File name, then its status: a green `added` (underlined name) for files Claude created, a yellow `modified` (italic name) for files Claude edited, or a red `deleted` (struck-through, dim name) for files Claude deleted. Then green `+added` and red `-removed` counts. |
 | **File name (click)** | Opens the VS Code diff for that file. |
 | **✓ on a file** | Accepts: removes it from the list. The change is already on disk, so nothing else happens. |
 | **✗ on a file** | Rejects: restores the original, deletes a file Claude created (plus any now-empty folders Claude created), or recreates a file Claude deleted. Then Claude is told. |

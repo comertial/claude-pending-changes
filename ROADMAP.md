@@ -12,7 +12,6 @@ Being worked on, in priority order.
 
 - **Keep pending changes across sessions.** Today a new session starts with an empty list, and anything left unreviewed is just files on disk. Persist the list (and the originals) per project so you can pick the review back up.
 - **Lighter refresh.** The 2-second refresh re-reads every listed file on each tick. Check modification time and size first, and re-read only the files that moved.
-- **A status on every row.** Today only new and deleted files are labelled. Give every row a coloured label (green `added`, yellow `modified`, red `deleted`) and style the file name to match: underline for added, italic for modified, and the current strikethrough and dim for deleted. The styles keep each status readable without colour. ([spec](docs/specs/feat-status-on-every-row.md))
 
 ## Next
 

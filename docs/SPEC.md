@@ -26,7 +26,7 @@ It opens on its own the first time Claude changes a file in the project, or any 
 
 | Element | What it does |
 | --- | --- |
-| **File row** | File name, a `new` tag for files Claude created or a red `deleted` tag (struck-through, dim name) for files Claude deleted, then green `+added` and red `-removed` counts. |
+| **File row** | File name, then its status right after it: a green `added` (underlined name) for files Claude created, a yellow `modified` (italic name) for files Claude edited, or a red `deleted` (struck-through, dim name) for files Claude deleted. Then green `+added` and red `-removed` counts. The name style keeps the status readable without colour. |
 | **File name (click)** | Opens the VS Code diff for that file. Without `code` on PATH, a toast says VS Code couldn't be opened. |
 | **✓ on a file** | Accepts: removes it from the list. The change is already on disk, so nothing else happens, and Claude is told nothing. |
 | **✗ on a file** | Rejects: restores the original, deletes a file Claude created (plus any now-empty folders Claude created), or recreates a file Claude deleted. Then Claude is told. |
@@ -296,7 +296,7 @@ This list is kept in sync with the suite by hand. What the tests cover:
   - An existing file reverted to its original drops off and Claude is told.
   - Resolving a deleted file removes its empty stand-in too.
 - **Notes to Claude:** the next prompt reports your edits, once.
-- **Tree:** folders, merged chains and totals; tree guides; collapse and expand.
+- **Tree:** folders, merged chains and totals; tree guides; collapse and expand; a coloured status and matching name style on every file row.
 - **Folder actions:**
   - Folder ✗ rejects its files and removes Claude-created folders, but keeps folders that already existed.
   - Folder ✓ accepts only that folder.

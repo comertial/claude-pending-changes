@@ -448,6 +448,32 @@ test('a committed file deleted by a shell command is listed as deleted; reject r
   await ui.unmount()
 })
 
+test('every file row shows a coloured status and a matching name style; folder rows show none', async ($, on) => {
+  const head = { '/repo/a.txt': 'one\n', '/repo/old.txt': 'old\n' }
+  host(on, head, { head, shell: { 'rm old.txt': d => void d.delete('/repo/old.txt') } })
+  await $.tool.call({ tool: 'Write', file_path: '/repo/dir/new.txt', content: 'n\n' })
+  await $.tool.call(edit('/repo/a.txt', 'one', 'uno'))
+  await $.tool.call(bash('rm old.txt'))
+  const ui = await mountPane($)
+
+  const rows = [
+    { name: 'new.txt', status: 'added', color: 'success', style: { underline: true } },
+    { name: 'a.txt', status: 'modified', color: 'warning', style: { italic: true } },
+    { name: 'old.txt', status: 'deleted', color: 'error', style: { strikethrough: true, dimColor: true } },
+  ]
+  for (const { name, status, color, style } of rows) {
+    const label = await ui.find({ type: 'Text', text: new RegExp(`^ ${status}$`) })
+    expect(label?.props.color, status).toBe(color)
+    const shown = await ui.find({ type: 'Text', text: new RegExp(`${name.replace('.', '\\.')}$`) })
+    expect(shown?.props, name).toMatchObject(style)
+  }
+  expect(await ui.findAll({ type: 'Text', text: /^ (added|modified|deleted)$/ })).toHaveLength(3)
+
+  const folder = await ui.find({ type: 'Button', key: `toggle-dir-${folderId('dir')}` })
+  expect(folder?.text).toBe('▾ dir/')
+  await ui.unmount()
+})
+
 test('any shell edit git sees is listed: a committed file rewritten, a new file in a new folder', async ($, on) => {
   const head = { '/repo/a.txt': 'one\ntwo\n' }
   const { disk, dirs } = host(on, head, {
