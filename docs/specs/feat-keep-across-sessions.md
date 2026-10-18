@@ -107,7 +107,9 @@ With `persistAcrossSessions` off, every row above behaves exactly as today. No D
 | The user rejects a file whose owner session has ended | the Claude of the session where the user rejected it (the file is resolved, so it has no owner afterwards) | today's reject note |
 | The user hand-edits, or reverts in the diff, a file whose owner session has ended | every live Claude that knows the file: it got it in a resume note or a handover note | "`X`, changed in an earlier session, was modified by the user; re-read it before editing it." / "The user reverted `X`, changed in an earlier session, to its original; re-read it before editing it." |
 
-A note queued for a live owner that ends before delivering it is delivered by the session that queued it to its own Claude when it came from a click there. Otherwise it follows the last row.
+Notes between sessions travel in the records themselves: a reject or revert is a resolve record naming its kind and the owner, and a handover is a newer record with another owner. The owner's session reads them at its next refresh and tells its own Claude, naming the file relative to its own cwd. No separate note is stored, so two sessions that see the same revert send one note.
+
+A reject recorded for a live owner that ends, or is folded away by another session, without having read it (its record still predates the reject) is told to the Claude of the session where the user clicked, once. A revert or hand edit in that case follows the last row.
 
 Every note names the file relative to the cwd of the Claude that receives it.
 
@@ -143,6 +145,7 @@ Every note names the file relative to the cwd of the Claude that receives it.
 - Non-UTF-8 files stay lossy until #3 is fixed.
 - A crashed session counts as ended only after 30 s.
 - Sessions on one worktree must share a machine and clock.
+- `$.state` holds at most about 4 M characters for the list. Entries from other sessions that would pass that are left out of this session's pane, with one toast; they stay persisted and other sessions still list them.
 - Pending changes outlive branch switches. Rows from another branch are tagged, but ✗ still restores the original they were recorded against.
 - If another session's Claude changes a file during this session's shell command and hasn't written its record by the time the command ends, this session claims the change as its own Claude's. It is still listed for review.
 - Only VS Code's watcher was checked. Other `.git` watchers (JetBrains, `core.fsmonitor`) and history rewriters run with `--all` or `--everything` (`git filter-branch`, `git lfs migrate`) weren't, and may react to the shard folder or trip over a ref that points at a tree.
@@ -156,8 +159,8 @@ Every note names the file relative to the cwd of the Claude that receives it.
 6. A session started in a subfolder lists only entries under its cwd and shows "N more pending outside this folder". Accept all and reject all touch only the listed entries.
 7. After `/clear` (`session.end` reason `clear`, then a new id), the old id is marked ended, and later writes are owned by the new id.
 8. The first tool result or prompt of a session that resumed entries carries the resume note listing them, once.
-9. When session B's Claude edits a file owned by session A, the entry's owner becomes B, and B's shard holds the handover note addressed to A, which A delivers to its Claude.
-10. Rejecting, from session B, a file owned by live session A queues the reject note for A, not for B. When A's heartbeat is stale or A has ended, B's Claude is told, and the file stays resolved: nothing recorded afterwards brings it back.
+9. When session B's Claude edits a file owned by session A, the entry's owner becomes B in B's record, and A, reading it, tells its Claude the handover note.
+10. Rejecting, from session B, a file owned by live session A records the reject for A, and A tells its Claude; B's Claude isn't told. When A's heartbeat is stale or A has ended, B's Claude is told, and the file stays resolved: nothing recorded afterwards brings it back. When A ends without reading the reject, B's Claude is told, once.
 11. Rows owned by another or an ended session show the dim origin tag; this session's rows don't.
 12. With `persistAcrossSessions: false`, nothing is written to the git dir or refs (no record, no heartbeat), and a new session starts with an empty list.
 13. With `openOnStart: 'toast'`, pending entries at session start show the toast and don't open the pane. With `auto`, today's behaviour holds. A Claude change while the list is still loading gives exactly one toast at start; an entry from another session, or the reload after `/clear`, gives none.
@@ -218,4 +221,5 @@ Agreed while planning:
 - Hand edits and diff reverts of a file whose owner has ended go to every live Claude that knows the file (resume or handover note), not to every session.
 - Heartbeats and shards stay in the git dir; per-tick writes only rewrite existing files.
 - From the second review: rows from another branch get an `other branch` tag (the branch is recorded per change); a resolve record is kept 24 h after it's no longer needed.
+- From implementation: notes between sessions travel in the records (resolve and ownership records) instead of a note queue in each shard; session start waits for the load (about 3–4 git calls, once per session). The test kit can't reload a module, so the mod has a test seam: a `command.run` hook for `__pending-changes-reload`, never registered as a command and inert unless `PENDING_CHANGES_TEST=1`, which resets the module's state (keeping `$.state`) and can change the settings. It makes criteria 28 (both halves), 29 and 34 and the plan's test 46 automated tests.
 - From the third review: live sharing stays in v1 (the alternative, one live session per worktree with the rest session-only, was considered and declined). All 25 findings are folded in.

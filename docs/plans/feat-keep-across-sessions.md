@@ -326,7 +326,11 @@ Each one needs your approval.
   3. `/clear`: the list survives, quietly;
   4. `/exit` then `--resume`: the other session still tags the rows `other session`;
   5. VS Code's Git output channel shows no status run every 2 s;
-  5b. change a setting in `/config` mid-session, then ✓ a file: the other session's list keeps every other entry;
+  5a. criterion 28's "on" half, which a test can't drive (options are fixed per test): turn `persistAcrossSessions` off in `/config`, ✓ a file another session also lists, turn it back on, and check the file stays resolved in both sessions;
+  5b. hot reload, which the test kit can't drive (criteria 29 and 34, plan test 46). With two files pending, one of them a session-only entry (over 4 MiB in UTF-8), change a setting in `/config` mid-session, then ✓ the other file. Check that:
+     - the shard on disk keeps every other entry and never shrinks (29);
+     - the session-only file is still listed (34);
+     - a file Claude changed just before the reload appears in the shard after the next refresh (46);
   5c. `git switch` to another branch: rows from the first branch show `other branch`;
   5d. assumptions the third review couldn't verify, each checked once against the design's fallback:
      - two processes, one rewriting `.alive` every 2 s while the other reads it in a loop: count the empty reads (#6);
