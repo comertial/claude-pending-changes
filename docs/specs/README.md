@@ -43,7 +43,8 @@ One branch per piece of work, named after its slug alone (e.g. `status-on-every-
    After the review below and the user's approval, set both statuses to `Approved`.
 3. **Review.** Before the plan is approved, the `spec-reviewer` agent ([`.claude/agents/spec-reviewer.md`](../../.claude/agents/spec-reviewer.md)) reviews the spec and plan in its own context. It reports flaws, regressions and implementation risks, sorted critical to low, each with a recommended action. The user picks which ones to fold in before approving. The user can also run it at any time with `/review-spec [paths, slug or focus]`.
 4. **Implement.** For a bug, write the regression test first and watch it fail. Every acceptance criterion gets a test, and the whole suite must pass.
-5. **Ship.** In one commit on the branch:
+5. **Verify.** Before the ship commit, the `impl-reviewer` agent ([`.claude/agents/impl-reviewer.md`](../../.claude/agents/impl-reviewer.md)) checks the implementation against the approved spec and plan in its own context. It runs the checks, confirms suspected bugs with probe tests in a scratch copy, and rules on each deviation the implementer reports: allow, allow with conditions, or not allowed. The user picks which findings to fix. A deviation that contradicts the approved spec is amended there and approved before shipping. The user can also run it at any time with `/review-impl [implementer notes, paths or focus]`.
+6. **Ship.** In one commit on the branch:
    - merge any behaviour change into the SPEC;
    - add a SPEC Design decision if a lasting rule came up, naming any idea it rules out;
    - update the SPEC Tests list and the CHANGELOG;
