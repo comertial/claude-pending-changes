@@ -29,6 +29,7 @@ Claude just edited five files. Which ones? What changed? How do you undo only th
 | 🔍 **Real diffs in VS Code** | Click a file for a side-by-side diff. Revert single blocks or edit by hand; the pane updates within ~2 seconds. |
 | 🐚 **Catches shell changes too** | Not just Edit/Write: formatters, codegen, `git checkout`, `npm install`, scripts. Anything that moves in `git status` is tracked. |
 | 🧠 **Claude stays in sync** | Every reject, revert or hand edit is reported back to Claude, so it never works from a stale picture of your code. |
+| 💾 **Survives sessions** | In a git repo, the review list and its originals outlive `/clear`, `/exit` and new sessions, and sessions working in one checkout share one list. Pick the review up where you left it. |
 
 ```
 ▾ demo/config/                        +4 -0  [ ✓ ] [ ✗ ]
@@ -108,6 +109,9 @@ It opens on its own the first time Claude changes a file in the project, or any 
 | **✓ / ✗ on a folder** | Accepts or rejects every file under it, including subfolders. |
 | **Accept all / Reject all** | The same for every file in the list. |
 | **Hover** | The row under the mouse gets a grey background, so it's clear which ✓/✗ belongs to which file. |
+| **`other session` / `earlier`** | A dim tag on a file another session's Claude changed: one that's still running, or one that has ended. |
+| **`other branch`** | A dim tag on a file changed while another branch was checked out. |
+| **"N more pending outside this folder"** | Pending files elsewhere in the repo, outside the folder this session runs in. Open a session there to review them. |
 
 **Layout:** folders come before files, each sorted by name. A folder containing only one other folder is merged into one row (`▾ demo/config/`), like VS Code's compact folders. Dim `├─` `└─` `│` guides show nesting below the top level. Long names are trimmed from the left with `…`.
 
@@ -124,6 +128,25 @@ Revert single blocks with the gutter arrow between the sides (VS Code calls it "
 - if you reverted **every** block of an existing file, it matches its original, drops off the list, and Claude is told you reverted it;
 - if you reverted **every** block of a **new** file (leaving it empty), it counts as a reject: the file and any now-empty folders Claude created for it are deleted, and Claude is told.
 
+### Across sessions
+
+In a git repo, the list is kept per checkout (each git worktree has its own):
+
+- **A new session, `/clear` or `--resume`** picks up every file still pending, with its original, so ✓, ✗ and the diff work as before. Claude is told which files have unreviewed changes from an earlier session.
+- **Two sessions in one checkout** share one list, in step within about 2 seconds. Each file belongs to the Claude that last changed it, and your decisions on it are reported to that Claude, wherever it runs.
+- **The same session open in two windows:** the second one keeps its own list only, and says so.
+
+The originals are stored in git's object store and pinned by a hidden ref, `refs/pending-changes/*`. Nothing is committed, nothing shows in `git status` or `git log`, and ordinary pushes and clones don't carry it.
+
+### Settings
+
+In `/config`:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Keep pending changes across sessions** (`persistAcrossSessions`) | on | Off: each session has its own list, and a new one starts empty. |
+| **Open the pane at session start** (`openOnStart`) | `auto` | `auto` opens the pane when files are pending at start; `toast` only says so. |
+
 ---
 
 ## 📡 What gets tracked
@@ -139,7 +162,7 @@ Only files **inside the session's working directory**. Scratch scripts in temp f
 
 Not tracked: gitignored files (`node_modules`, build output, `.env`), files outside the project, and your edits to files that aren't listed.
 
-**Multi-round changes.** The original is saved the **first** time Claude touches a file; later edits, in the same turn or later ones, add to the same diff. The pane always shows the **net** change from that first original, so a file Claude changes and then changes back disappears. Files stay listed across prompts until you resolve them.
+**Multi-round changes.** The original is saved the **first** time Claude touches a file; later edits, in the same turn or later ones, add to the same diff. The pane always shows the **net** change from that first original, so a file Claude changes and then changes back disappears. Files stay listed across prompts, and in a git repo across sessions, until you resolve them. Each session still lists only the files under the folder it runs in.
 
 ---
 
@@ -157,6 +180,8 @@ Notes are delivered to Claude as hidden context (Claude reads them; your chat do
 | You delete a listed file yourself | "The user deleted `X` after your last edit." |
 | You accept | Nothing. |
 
+With several sessions, a note goes to the Claude that made the change, in whichever session it runs. That Claude is also told when another session's Claude edits one of its files ("`X` was since edited by another Claude session"). If the session that made a change has ended, a Claude that was told about the file in a later session hears of your edits and reverts to it.
+
 Each of your edits is reported once. As a backstop, Claude Code's Edit tool already refuses to edit a file that changed since Claude last read it.
 
 ---
@@ -170,7 +195,13 @@ Each of your edits is reported once. As a backstop, Claude Code's Edit tool alre
 - **Concurrent edits:** if you save a file in VS Code while one of Claude's shell commands is running, the change is attributed to Claude. It still shows up for review.
 - **The 2-second refresh** reads every listed file each tick. Fine for normal use; hundreds of large files would make it heavier.
 - **Collapsed folders are remembered by path:** a folder that disappears and later comes back reappears collapsed.
-- **State is per session:** a new session starts with an empty list. Pending changes from a previous session are just files on disk, no longer listed.
+- **Only in git:** outside a git repo, or with *Keep pending changes across sessions* off, a new session starts with an empty list, and pending changes from a previous session are just files on disk.
+- **Copying the whole repo** with `git push --mirror`, a `refs/*:refs/*` refspec, `git clone --mirror` or `git bundle create --all` copies the hidden ref, and your originals with it. `git fast-export --all` (and `git filter-repo`) warns about it. Ordinary push, `--all`, `--tags` and clone don't. See [Troubleshooting](#-troubleshooting) to remove it.
+- **Very large files:** an original over about 4 MiB is kept in its session only. Files from other sessions too large to fit the session's list are left out of its pane, with a toast.
+- **Branch switches:** pending changes outlive them. Rows from another branch are tagged, but ✗ still restores the original they were recorded against.
+- **Crashes:** a crashed session counts as ended only after 30 seconds.
+- **Two sessions running shell commands at once:** a file the other session's Claude changes during this session's command can be attributed to this session's Claude. It is still listed for review.
+- **Non-UTF-8 files:** ✗ rewrites them as UTF-8 ([#3](https://github.com/comertial/claude-pending-changes/issues/3)).
 
 ---
 
@@ -185,6 +216,9 @@ Each of your edits is reported once. As a backstop, Claude Code's Edit tool alre
 | The hook seems to run twice | The installed copy and a `--plugin-dir` / session dev copy are both loaded. Use one. |
 | A diff tab shows "deleted" | Its temp file was cleaned up after accept/reject. Close the tab. |
 | `test.json` shows `+3 -2` after a PowerShell edit | Windows PowerShell 5.1's `-Encoding utf8` adds a byte-order mark to the first line. That's the command, not the mod. |
+| A toast says the session is open in another window | The same session id runs in two Claude Code windows (a `--resume` of a running session). The later one keeps its own list only; it takes over once the other window closes. |
+| A row shows `other branch` | It was changed while another branch was checked out. Review it before ✗: it restores the original from that branch. |
+| You uninstalled the mod and want its data gone | In each repo: `git for-each-ref --format="delete %(refname)" refs/pending-changes/ \| git update-ref --stdin`, then delete the `pending-changes` folders in `.git/` and `.git/worktrees/*/`. git's own gc then reclaims the originals. |
 
 ---
 

@@ -10,7 +10,6 @@ Before work on an item starts, it gets a short spec in [`docs/specs/`](docs/spec
 
 Being worked on, in priority order.
 
-- **Keep pending changes across sessions.** Today a new session starts with an empty list, and anything left unreviewed is just files on disk. Persist the list (and the originals) per project so you can pick the review back up.
 - **Lighter refresh.** The 2-second refresh re-reads every listed file on each tick. Check modification time and size first, and re-read only the files that moved.
 
 ## Next
