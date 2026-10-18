@@ -19,12 +19,15 @@ Features (ROADMAP items) and bugs both follow the spec-driven loop in [docs/spec
 1. **Spec.** Copy `docs/specs/_feature.md` or `_bug.md` and fill it in, then stop for approval.
    - Feature: what and why, the affected SPEC behaviour (what *changes* and what *must not change*), and testable acceptance criteria.
    - Bug: the reproduction, the expected behaviour quoted from the SPEC (or a note that the SPEC is silent), the actual behaviour, and a confirmed root cause.
-2. **Plan.** Write `docs/plans/<same name>.md` with the files, tests, SPEC merge, README check and commits, then stop for approval.
+2. **Plan.** Write `docs/plans/<same name>.md` with the files, tests, SPEC merge, README check and commits, then review it (step 3) before asking for approval.
    - **Plan mode** writes here automatically (`plansDirectory` in `.claude/settings.json`) under a random name. As soon as the plan is approved, rename it to match its spec, before any other change.
    - **Without plan mode**, copy `docs/plans/_plan.md`.
    - A file in `docs/plans/` with no matching spec is an abandoned draft. Rename or delete it; don't commit it.
-3. **Implement.** For a bug, write the regression test first and confirm it fails before the fix. Every acceptance criterion becomes a test, and the whole suite must pass.
-4. **Ship.** In one commit on the branch, before it's merged into `main`:
+3. **Review.** Before the plan is approved, spawn the `spec-reviewer` agent (`.claude/agents/spec-reviewer.md`) to review the spec and plan. Don't review them in the main session, which keeps its context free for implementing, and don't use the `/review-spec` skill: it's for me to run by hand.
+   - Brief it with the document paths, the commit of any closed research, and any decisions agreed in chat that aren't in the documents yet. Don't add your own suspected findings; an unprimed reviewer is the point.
+   - Show me its findings, sorted critical to low, with any you can refute from context it lacked and why. Fold in only the ones I pick, then ask for approval of the plan.
+4. **Implement.** For a bug, write the regression test first and confirm it fails before the fix. Every acceptance criterion becomes a test, and the whole suite must pass.
+5. **Ship.** In one commit on the branch, before it's merged into `main`:
    - merge any behaviour change into `docs/SPEC.md`;
    - add a SPEC Design decision if a lasting rule came up, naming any idea it rules out;
    - update the SPEC Tests list and `CHANGELOG.md` `[Unreleased]` (`Fixed` for bugs);
