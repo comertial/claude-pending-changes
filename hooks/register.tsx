@@ -87,6 +87,9 @@ type Ctx = {
 
 let ctxPromise: Promise<Ctx> | undefined
 
+/** Session ids whose session.end ran in this process: never loaded again unless a session.start revives one. */
+const endedIds = new Set<string>()
+
 function ctx($: $): Promise<Ctx> {
   ctxPromise ??= (async () => {
     const cwd = slash(await $.session.cwd())
@@ -1119,6 +1122,9 @@ async function ensureLoaded($: $): Promise<void> {
   const c = await ctx($)
   if (!persistOn(c) || !rt.canRead) return
   const id = await $.session.id()
+  // An id whose session.end ran stays ended in this process: a refresh tick before the process
+  // quits must not load it again, which would clear its end marker and beat for a session that's gone.
+  if (endedIds.has(id)) return
   if (rt.loading) await rt.loading
   if (rt.id === id && (await read($, loadedFor)) === id) return
   rt.loading ??= load($, c, id).finally(() => {
@@ -1155,19 +1161,9 @@ async function load($: $, c: Ctx & { git: GitCtx; gitRoot: string }, id: string)
     const parsed = (await $.fs.exists(path)) ? parseShard(await $.fs.read(path)) : undefined
     if (parsed && (!seed || parsed.seq > seed.seq)) seed = parsed
   }
-  // Another process under this id, still beating: this one is the second window and stays session-only.
-  if (seed && seed.instance !== instance) {
-    const alive = `${c.git.shardDir}/${id}.alive`
-    const beatMs = (await $.fs.exists(alive)) ? (await $.fs.stat(alive)).mtimeMs : undefined
-    if (beatMs !== undefined && liveness(beatMs, seed.endedAt, await $.clock.now()) === 'live') {
-      rt.secondWindow = true
-      rt.canRead = false
-      rt.canWrite = false
-      rt.shard = undefined
-      $.ui.toast("This session is open in another window too; pending changes here aren't shared.", { timeoutMs: 8000 })
-      return
-    }
-  }
+  // A shard another process wrote is taken over here. If that process is still running (a second
+  // window), it beats again within one refresh, and the sync's check makes the later one yield; a
+  // fresh heartbeat alone can't tell it from a resume right after a crash.
   rt.shard = seed ? { ...seed, instance, entries: { ...seed.entries } } : { v: 1, seq: 0, session: id, instance, entries: {} }
   // Taking over a shard another process wrote (a resume, or a first window that stopped): claim it now.
   if (seed && seed.instance !== instance) rt.dirty = true
@@ -1921,12 +1917,15 @@ export const register: Register = (on, given) => {
     void ctx($)
       .then(c => sweepStale($, c))
       .catch(() => {})
+    // A session starting under an id that ended in this process (an in-process resume) is live again.
+    endedIds.delete(await $.session.id())
     await loaded($)
     await startDecision($)
     return next(e)
   })
 
   on('session.end', async ($, e, next) => {
+    endedIds.add(e.sessionId)
     try {
       const c = await ctx($)
       // A second window leaves the shared record to the first: no end marker, no flush.

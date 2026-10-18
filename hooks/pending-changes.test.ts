@@ -1580,13 +1580,18 @@ test("another session's entry whose original can't be read isn't listed, and Rej
 
 test('a second window on the same session id runs session-only, and takes over once the first stops', async ($, on) => {
   const h = host(on, { '/repo/a.txt': 'a\n' })
-  h.put(`${SHARDS}/s1.a.json`, JSON.stringify({ v: 1, seq: 4, session: 's1', instance: 'first-window', entries: {} }))
-  h.put(`${SHARDS}/s1.alive`, JSON.stringify({ busy: false }))
+  h.put(`${SHARDS}/s1.a.json`, JSON.stringify({ v: 1, seq: 4, session: 's1', instance: 's1-1-first', entries: {} }))
+  h.put(`${SHARDS}/s1.alive`, JSON.stringify({ busy: false, instance: 's1-1-first' }))
   await start($)
+  // The first window is still running: it beats again within one refresh, and this one yields.
+  h.put(`${SHARDS}/s1.alive`, JSON.stringify({ busy: false, instance: 's1-1-first' }))
+  await h.clock.advance(2000)
+  await idle(h)
   expect(h.toasts).toContain("This session is open in another window too; pending changes here aren't shared.")
+  const shardBefore = h.disk.get(`${SHARDS}/s1.a.json`)
   await $.tool.call(edit('/repo/a.txt', 'a', 'A'))
   await idle(h)
-  expect(ownShard(h)?.instance).toBe('first-window')
+  expect(h.disk.get(`${SHARDS}/s1.a.json`)).toBe(shardBefore)
   // The first window closed without a word: once its heartbeat is stale, this one takes over.
   for (let i = 0; i < 17; i++) await h.clock.advance(2000)
   await idle(h)
@@ -2117,4 +2122,34 @@ test('turning persistence off, accepting a file and turning it back on keeps the
   const after = await mountPane($)
   expect(await isEmpty(after)).toBe(true)
   await after.unmount()
+})
+
+test("a refresh tick between session.end and the process exiting doesn't bring the ended session back", async ($, on) => {
+  const h = host(on, { '/repo/a.txt': 'a\n' })
+  await start($)
+  await $.tool.call(edit('/repo/a.txt', 'a', 'A'))
+  await idle(h)
+  await $.session.end({ reason: 'prompt_input_exit', sessionId: 's1', resume: {} } as never)
+  await idle(h)
+  const endedBeat = h.mtimes.get(`${SHARDS}/s1.alive`)
+  // The process lingers a moment: the 2 s refresh still fires.
+  await h.clock.advance(2000)
+  await idle(h)
+  await h.clock.advance(2000)
+  await idle(h)
+  expect(ownShard(h)?.endedAt).toBeDefined()
+  expect(h.mtimes.get(`${SHARDS}/s1.alive`)).toBe(endedBeat)
+})
+
+test('a session resumed right after a crash (no end marker, a fresh heartbeat) is not taken for a second window', async ($, on) => {
+  const h = host(on, { '/repo/a.txt': 'a\n' })
+  h.put(`${SHARDS}/s1.a.json`, JSON.stringify({ v: 1, seq: 4, session: 's1', instance: 's1-1-crashed', entries: {} }))
+  h.put(`${SHARDS}/s1.alive`, JSON.stringify({ busy: false, instance: 's1-1-crashed' }))
+  await start($)
+  await $.tool.call(edit('/repo/a.txt', 'a', 'A'))
+  await idle(h)
+  await h.clock.advance(2000)
+  await idle(h)
+  expect(h.toasts).toEqual([])
+  expect(ownShard(h)?.entries['a.txt']).toBeDefined()
 })
