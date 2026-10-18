@@ -50,6 +50,7 @@ const knows = atom({ plugin: 'pending-changes', key: 'knows' } as const, {} as R
 const resolvedWhileOff = atom({ plugin: 'pending-changes', key: 'resolvedWhileOff' } as const, {} as Record<string, { at: number; rel: string }>)
 const instanceAtom = atom({ plugin: 'pending-changes', key: 'instance' } as const, '')
 const branchNow = atom({ plugin: 'pending-changes', key: 'branchNow' } as const, '')
+const secondWindow = atom({ plugin: 'pending-changes', key: 'secondWindow' } as const, false)
 
 type $ = EngineInterface
 
@@ -265,6 +266,8 @@ async function settle(
       ...(keep.at !== undefined ? { at: keep.at } : {}),
       ...(keep.branch ? { branch: keep.branch } : {}),
       ...(keep.sessionOnly ? { sessionOnly: true } : {}),
+      // A row a second window had when it yielded keeps its tag until this window's own Claude changes it.
+      ...(keep.otherWindow && from !== 'claude' ? { otherWindow: true } : {}),
     }
     if (from === 'claude') {
       written.owner = me
@@ -583,11 +586,20 @@ async function rememberOwn($: $, path: string): Promise<void> {
 /** When an instance was made: its id carries the time, base 36. Unknown is oldest. */
 const instanceSince = (instance: string) => parseInt(instance.split('-')[1] ?? '', 36) || 0
 
+/** Whether the pane is on screen now: open, the tab shown, and placed. */
+async function paneVisible($: $): Promise<boolean> {
+  try {
+    return (await $.ui.panes()).some(p => p.id === PANE && p.isShown && p.isPlaced)
+  } catch {
+    return false
+  }
+}
+
 /**
  * Another process writes under this session id (a second window). The one
  * started later yields: it goes session-only and says so.
  */
-function foreignWriter($: $, other: string): void {
+async function foreignWriter($: $, other: string): Promise<void> {
   if (rt.secondWindow || other === rt.instance) return
   const mine = instanceSince(rt.instance)
   const theirs = instanceSince(other)
@@ -595,7 +607,17 @@ function foreignWriter($: $, other: string): void {
   rt.secondWindow = true
   rt.canRead = false
   rt.canWrite = false
-  $.ui.toast("This session is open in another window too; pending changes here aren't shared.", { timeoutMs: 8000 })
+  // The pane says so with its banner; a toast only when the pane isn't on screen to say it.
+  if (!(await paneVisible($))) {
+    $.ui.toast("This session is open in another window too; pending changes here aren't shared.", { timeoutMs: 8000 })
+  }
+  // What the pane lists now came from the shared list and may go out of date.
+  await update($, secondWindow, () => true)
+  await update($, files, all => {
+    const out: Record<string, Tracked> = {}
+    for (const [key, entry] of Object.entries(all)) out[key] = { ...entry, otherWindow: true }
+    return out
+  })
 }
 
 /** Backs off a failed write step, and tells peers this session is detached after five in a row. */
@@ -817,7 +839,20 @@ async function beat($: $, c: Ctx): Promise<void> {
   if (!persistOn(c) || !rt.canRead || !rt.shard || rt.shard.endedAt !== undefined || rt.secondWindow) return
   try {
     const detached = rt.writeFailures >= 5
-    const path = `${c.git.shardDir}/${rt.shard.session}.alive`
+    const name = `${rt.shard.session}.alive`
+    const path = `${c.git.shardDir}/${name}`
+    // Look before overwriting: a first window still running beats here too, and this write would
+    // hide its beat from the sync that follows.
+    const mine = rt.ownFiles.get(name)
+    if (mine && (await $.fs.exists(path))) {
+      const { mtimeMs, size } = await $.fs.stat(path)
+      if (mtimeMs !== mine.mtimeMs || size !== mine.size) {
+        const text = await readQuiet($, path)
+        const writer = text === undefined ? undefined : parseHeartbeat(text)?.instance
+        if (writer) await foreignWriter($, writer)
+        if (rt.secondWindow) return
+      }
+    }
     await $.fs.write(path, JSON.stringify({ busy: rt.busy, instance: rt.instance, ...(detached ? { detached } : {}) }))
     await rememberOwn($, path)
     rt.lastBeat = await $.clock.now()
@@ -865,7 +900,7 @@ async function syncPeers($: $, c: Ctx, opts: { prevBeat?: number; loading?: bool
       rt.ownFiles.set(entry.name, { mtimeMs: entry.mtimeMs, size: entry.size })
       const text = await readQuiet($, `${dir}/${entry.name}`)
       const writer = text === undefined ? undefined : (shardMatch ? parseShard(text) : parseHeartbeat(text))?.instance
-      if (writer) foreignWriter($, writer)
+      if (writer) await foreignWriter($, writer)
       if (rt.secondWindow) return
       continue
     }
@@ -1659,6 +1694,14 @@ async function checkFirstWindow($: $, c: Ctx & { git: GitCtx }): Promise<void> {
   rt.canRead = true
   rt.canWrite = true
   rt.id = undefined
+  // The first window's last writes are its, not another window's: the load takes a fresh look.
+  rt.ownFiles.clear()
+  await update($, secondWindow, () => false)
+  await update($, files, all => {
+    const out: Record<string, Tracked> = {}
+    for (const [key, { otherWindow: _, ...entry }] of Object.entries(all)) out[key] = entry
+    return out
+  })
 }
 
 async function sweepStale($: $, c: Ctx): Promise<void> {
@@ -2165,9 +2208,15 @@ export const register: Register = (on, given) => {
     const elsewhere = await read($, outside)
     const footer =
       elsewhere > 0 ? <Text dimColor>{`${elsewhere} more pending outside this folder`}</Text> : null
+    const banner = (await read($, secondWindow)) ? (
+      <Box marginBottom={1}>
+        <Text dimColor>{"This session is open in another window; this list isn't shared here."}</Text>
+      </Box>
+    ) : null
     if (all.length === 0) {
       return (
         <Box flexDirection="column">
+          {banner}
           <Text dimColor>No pending changes.</Text>
           {footer}
         </Box>
@@ -2186,11 +2235,13 @@ export const register: Register = (on, given) => {
       // Owners folded away are no longer listed: anything not live is earlier. Only with persistence on (`me` listed).
       if (f.owner && f.owner !== me && states[me]) tags.push(states[f.owner] === 'live' ? 'other session' : 'earlier')
       if (f.branch && branch && f.branch !== branch) tags.push('other branch')
+      if (f.otherWindow) tags.push('other window')
       return tags
     }
 
     return (
       <Box flexDirection="column">
+        {banner}
         {treeRows(all, closedDirs).map(row => {
           const guide = row.guide ? <Text dimColor>{row.guide}</Text> : ''
           const added = row.kind === 'folder' ? row.node.added : row.file.added

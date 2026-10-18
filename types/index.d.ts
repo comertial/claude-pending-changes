@@ -33,6 +33,8 @@ export type Tracked = {
   branch?: string
   /** Never persisted (too large, or the write failed): kept in this session only. */
   sessionOnly?: boolean
+  /** In a second window: listed when it yielded, from the shared list, so it may be out of date. */
+  otherWindow?: boolean
 }
 
 declare module 'claude-code' {
@@ -60,6 +62,8 @@ declare module 'claude-code' {
       instance: string
       /** The branch checked out now, for the `other branch` tag. */
       branchNow: string
+      /** This process yielded to another window open on the same session. */
+      secondWindow: boolean
     }
   }
 }

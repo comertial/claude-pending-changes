@@ -288,6 +288,12 @@ function host(on: On, initial: Record<string, string> = {}, options: HostOptions
       ? { value: { isPlaced: false as const, reason: 'below 144 columns' } }
       : { value: { isPlaced: true as const } }
   })
+  // The engine's record of the open pane: shown and placed once opened on a wide terminal.
+  on('ui.panes', () => ({
+    value: opened.includes('pending-changes')
+      ? [{ id: 'pending-changes', title: 'Changes', isShown: true, isFocused: false, isPlaced: !options.narrow }]
+      : [],
+  }))
   on('command.register', () => ({ value: { isRegistered: true } }) as never)
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.end', ($, e) => ({ sessionId: e.sessionId }) as never)
@@ -2152,4 +2158,44 @@ test('a session resumed right after a crash (no end marker, a fresh heartbeat) i
   await idle(h)
   expect(h.toasts).toEqual([])
   expect(ownShard(h)?.entries['a.txt']).toBeDefined()
+})
+
+test('a first window that keeps beating between this window\'s ticks is noticed', async ($, on) => {
+  const h = host(on, { '/repo/a.txt': 'a\n' })
+  h.put(`${SHARDS}/s1.a.json`, JSON.stringify({ v: 1, seq: 4, session: 's1', instance: 's1-1-first', entries: {} }))
+  h.put(`${SHARDS}/s1.alive`, JSON.stringify({ busy: false, instance: 's1-1-first' }))
+  await start($)
+  // The first window beats every 2 s, half-way between this window's ticks.
+  for (let i = 0; i < 3; i++) {
+    await h.clock.advance(1000)
+    h.put(`${SHARDS}/s1.alive`, JSON.stringify({ busy: false, instance: 's1-1-first' }))
+    await h.clock.advance(1000)
+    await idle(h)
+  }
+  expect(h.toasts).toContain("This session is open in another window too; pending changes here aren't shared.")
+})
+
+test("a second window's pane says it isn't shared and tags the rows it had when it yielded, until it takes over", async ($, on) => {
+  const h = host(on, { '/repo/a.txt': 'a, edited\n', '/repo/b.txt': 'b\n' })
+  h.put(`${SHARDS}/s1.a.json`, JSON.stringify({ v: 1, seq: 4, session: 's1', instance: 's1-1-first', entries: {} }))
+  h.put(`${SHARDS}/s1.alive`, JSON.stringify({ busy: false, instance: 's1-1-first' }))
+  peerShard(h, 'old', { 'a.txt': { original: 'a\n' } }, ENDED(h))
+  await start($)
+  await h.clock.advance(1000)
+  h.put(`${SHARDS}/s1.alive`, JSON.stringify({ busy: false, instance: 's1-1-first' }))
+  await h.clock.advance(1000)
+  await idle(h)
+  await $.tool.call(edit('/repo/b.txt', 'b', 'B'))
+  const ui = await mountPane($)
+  expect(await ui.find({ type: 'Text', text: "This session is open in another window; this list isn't shared here." })).toBeDefined()
+  // The pane opened at start and is on screen, so its banner says it: no toast.
+  expect(h.toasts.filter(t => /another window/.test(t))).toEqual([])
+  expect(await ui.find({ type: 'Button', text: /a\.txt modified earlier other window/ })).toBeDefined()
+  expect(await ui.find({ type: 'Button', text: /^b\.txt modified$/ })).toBeDefined()
+  // The first window closes: once its heartbeat is stale, banner and tags go.
+  for (let i = 0; i < 17; i++) await h.clock.advance(2000)
+  await idle(h)
+  expect(await ui.find({ type: 'Text', text: /open in another window/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Button', text: /other window/ })).toBeUndefined()
+  await ui.unmount()
 })

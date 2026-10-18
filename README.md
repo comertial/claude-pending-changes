@@ -111,6 +111,7 @@ It opens on its own the first time Claude changes a file in the project, or any 
 | **Hover** | The row under the mouse gets a grey background, so it's clear which ✓/✗ belongs to which file. |
 | **`other session` / `earlier`** | A dim tag on a file another session's Claude changed: one that's still running, or one that has ended. |
 | **`other branch`** | A dim tag on a file changed while another branch was checked out. |
+| **`other window`** | The same session is open in another window: this pane isn't shared, and a file with this tag may be out of date. A banner at the top says so. |
 | **"N more pending outside this folder"** | Pending files elsewhere in the repo, outside the folder this session runs in. Open a session there to review them. |
 
 **Layout:** folders come before files, each sorted by name. A folder containing only one other folder is merged into one row (`▾ demo/config/`), like VS Code's compact folders. Dim `├─` `└─` `│` guides show nesting below the top level. Long names are trimmed from the left with `…`.
@@ -134,7 +135,7 @@ In a git repo, the list is kept per checkout (each git worktree has its own):
 
 - **A new session, `/clear` or `--resume`** picks up every file still pending, with its original, so ✓, ✗ and the diff work as before. Claude is told which files have unreviewed changes from an earlier session.
 - **Two sessions in one checkout** share one list, in step within about 2 seconds. Each file belongs to the Claude that last changed it, and your decisions on it are reported to that Claude, wherever it runs.
-- **The same session open in two windows:** the second one keeps its own list only, and says so.
+- **The same session open in two windows:** the second one stops sharing, and says so with a banner in its pane and an `other window` tag on the files it listed then, or with a toast if the pane isn't open. It shares again once the first window closes.
 
 The originals are stored in git's object store and pinned by a hidden ref, `refs/pending-changes/*`. Nothing is committed, nothing shows in `git status` or `git log`, and ordinary pushes and clones don't carry it.
 
@@ -216,7 +217,7 @@ Each of your edits is reported once. As a backstop, Claude Code's Edit tool alre
 | The hook seems to run twice | The installed copy and a `--plugin-dir` / session dev copy are both loaded. Use one. |
 | A diff tab shows "deleted" | Its temp file was cleaned up after accept/reject. Close the tab. |
 | `test.json` shows `+3 -2` after a PowerShell edit | Windows PowerShell 5.1's `-Encoding utf8` adds a byte-order mark to the first line. That's the command, not the mod. |
-| A toast says the session is open in another window | The same session id runs in two Claude Code windows (a `--resume` of a running session). The later one keeps its own list only; it takes over once the other window closes. |
+| The pane (or a toast) says the session is open in another window | The same session id runs in two Claude Code windows (a `--resume` of a running session). The later one stops sharing its list, and rows tagged `other window` may be out of date; it shares again once the other window closes. |
 | A row shows `other branch` | It was changed while another branch was checked out. Review it before ✗: it restores the original from that branch. |
 | You uninstalled the mod and want its data gone | In each repo: `git for-each-ref --format="delete %(refname)" refs/pending-changes/ \| git update-ref --stdin`, then delete the `pending-changes` folders in `.git/` and `.git/worktrees/*/`. git's own gc then reclaims the originals. |
 
