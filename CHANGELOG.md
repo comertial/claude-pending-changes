@@ -7,6 +7,10 @@ All notable changes to this mod are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-18
+
+The first stable release: the review pane, shell tracking and Claude sync of 0.x, now kept across sessions and shared between sessions in one checkout.
+
 ### Added
 
 - Pending changes are kept across sessions in a git repo: a new session, `/clear` or `--resume` lists every file still pending, with its original, so ✓, ✗ and the diff work as before, and Claude is told which files have unreviewed changes from an earlier session. Originals are stored in git's object store, pinned by a hidden `refs/pending-changes/*` ref; nothing is committed or pushed by ordinary git commands.
@@ -40,6 +44,7 @@ All notable changes to this mod are documented here. The format follows
 - `/changes` command, collapsible and compact folders, hover highlight.
 - Per-session temp review copies with cleanup on accept/reject, session end and a 24-hour sweep.
 
-[Unreleased]: https://github.com/comertial/claude-pending-changes/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/comertial/claude-pending-changes/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/comertial/claude-pending-changes/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/comertial/claude-pending-changes/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/comertial/claude-pending-changes/releases/tag/v0.1.0
