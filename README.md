@@ -78,6 +78,7 @@ claude plugin install pending-changes@comertial-mods --scope user
 | | |
 | --- | --- |
 | **Update** | `claude plugin marketplace update comertial-mods`, then `claude plugin update pending-changes@comertial-mods` |
+| **Auto-update** | Off by default for third-party marketplaces. To get new versions on their own, open `/plugin` → **Marketplaces** → `comertial-mods` → **Enable auto-update**. |
 | **Remove** | `claude plugin uninstall pending-changes@comertial-mods` |
 
 **Requirements**
