@@ -27,7 +27,11 @@ Features (ROADMAP items) and bugs both follow the spec-driven loop in [docs/spec
    - Brief it with the document paths, the commit of any closed research, and any decisions agreed in chat that aren't in the documents yet. Don't add your own suspected findings; an unprimed reviewer is the point.
    - Show me its findings, sorted critical to low, with any you can refute from context it lacked and why. Fold in only the ones I pick, then ask for approval of the plan.
 4. **Implement.** For a bug, write the regression test first and confirm it fails before the fix. Every acceptance criterion becomes a test, and the whole suite must pass.
-5. **Ship.** In one commit on the branch, before it's merged into `main`:
+5. **Verify.** Before the ship commit, spawn the `impl-reviewer` agent (`.claude/agents/impl-reviewer.md`) to check the implementation against the approved spec and plan: missed points, new bugs, regressions, and a verdict on each deviation. As in step 3, don't review it in the main session, and don't use the `/review-impl` skill: it's for me to run by hand.
+   - Brief it with the spec and plan paths and your implementation notes: every deviation from the plan with its reason, every acceptance criterion without a test, and the bugs you fixed along the way. Don't add your own suspected findings.
+   - Show me its findings, sorted critical to low, with any you can refute from context it lacked and why. Fix only the ones I pick, and rerun it if the fixes were substantial.
+   - A deviation that contradicts an approved acceptance criterion, a spec rule or a SPEC Design decision is amended in the spec and needs my approval before shipping.
+6. **Ship.** In one commit on the branch, before it's merged into `main`:
    - merge any behaviour change into `docs/SPEC.md`;
    - add a SPEC Design decision if a lasting rule came up, naming any idea it rules out;
    - update the SPEC Tests list and `CHANGELOG.md` `[Unreleased]` (`Fixed` for bugs);
