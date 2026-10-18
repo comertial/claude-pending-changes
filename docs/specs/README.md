@@ -38,11 +38,12 @@ One branch per piece of work, named after its slug alone (e.g. `status-on-every-
 1. **Spec.** Copy the template to `docs/specs/` and fill it in. For a feature, read the SPEC sections it touches first. For a bug, confirm the reproduction and the root cause first. Its status is `Draft` until the user approves it.
 2. **Plan.** Write `docs/plans/<same name>.md`, either:
    - **in plan mode:** it's written to `docs/plans/` automatically under a random name. Once the plan is approved, rename it to match the spec before doing anything else; or
-   - **without plan mode:** copy [`_plan.md`](../plans/_plan.md) and stop for approval.
+   - **without plan mode:** copy [`_plan.md`](../plans/_plan.md), then review it before stopping for approval.
 
-   Then set both statuses to `Approved`.
-3. **Implement.** For a bug, write the regression test first and watch it fail. Every acceptance criterion gets a test, and the whole suite must pass.
-4. **Ship.** In one commit on the branch:
+   After the review below and the user's approval, set both statuses to `Approved`.
+3. **Review.** Before the plan is approved, the `spec-reviewer` agent ([`.claude/agents/spec-reviewer.md`](../../.claude/agents/spec-reviewer.md)) reviews the spec and plan in its own context. It reports flaws, regressions and implementation risks, sorted critical to low, each with a recommended action. The user picks which ones to fold in before approving. The user can also run it at any time with `/review-spec [paths, slug or focus]`.
+4. **Implement.** For a bug, write the regression test first and watch it fail. Every acceptance criterion gets a test, and the whole suite must pass.
+5. **Ship.** In one commit on the branch:
    - merge any behaviour change into the SPEC;
    - add a SPEC Design decision if a lasting rule came up, naming any idea it rules out;
    - update the SPEC Tests list and the CHANGELOG;
