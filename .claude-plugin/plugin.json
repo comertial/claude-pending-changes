@@ -7,5 +7,20 @@
   "repository": "https://github.com/comertial/claude-pending-changes",
   "license": "GPL-3.0-only",
   "keywords": ["review", "diff", "accept", "reject", "vscode"],
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "persistAcrossSessions": {
+      "type": "boolean",
+      "title": "Keep pending changes across sessions",
+      "description": "Keep the review list, and the originals it diffs against, per git worktree, shared by every session working in it.",
+      "default": true
+    },
+    "openOnStart": {
+      "type": "string",
+      "title": "Open the pane at session start",
+      "description": "auto opens the pane when files are pending at session start; toast only says so.",
+      "options": ["auto", "toast"],
+      "default": "auto"
+    }
+  }
 }

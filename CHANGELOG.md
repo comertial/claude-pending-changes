@@ -7,6 +7,12 @@ All notable changes to this mod are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Pending changes are kept across sessions in a git repo: a new session, `/clear` or `--resume` lists every file still pending, with its original, so ✓, ✗ and the diff work as before, and Claude is told which files have unreviewed changes from an earlier session. Originals are stored in git's object store, pinned by a hidden `refs/pending-changes/*` ref; nothing is committed or pushed by ordinary git commands.
+- Sessions in one checkout share one list, in step within about 2 seconds. Each file belongs to the Claude that last changed it, and your decisions on it are reported to that Claude, wherever it runs. Rows from another session carry a dim `other session` or `earlier` tag, rows from another branch an `other branch` tag, and a footer counts pending files outside the session's folder.
+- Two settings in `/config`: *Keep pending changes across sessions* (`persistAcrossSessions`, on by default) and *Open the pane at session start* (`openOnStart`: `auto`, or `toast` to only show the toast).
+
 ### Changed
 
 - Every file row shows a coloured status (green `added`, yellow `modified`, red `deleted`), with the name styled to match (underline, italic, strikethrough). The `new` tag is renamed to `added`.
