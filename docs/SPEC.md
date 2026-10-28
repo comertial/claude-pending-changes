@@ -438,7 +438,7 @@ This list is kept in sync with the suite by hand. What the tests cover:
   - ownership moves with a Claude edit, the old owner's Claude hears of the handover, and the first original is kept, including when the other session's record arrives mid-edit;
   - rejects of a live owner's file reach that owner; an ended owner's reach this Claude; a reject for an owner that ends or is folded away before reading it is told here once;
   - hand edits of an ended owner's file reach only a Claude that was told about it;
-  - a file accepted in a session that ends and is folded stays resolved; after ✓, a new Claude edit keeps the accepted content as its original;
+  - a file accepted in a session that ends and is folded stays resolved; after ✓, a new Claude edit keeps the accepted content as its original; a file accepted here and changed again by another session is listed again;
   - a file another session recorded during this session's shell command stays its; a file accepted elsewhere during the command takes the accepted content as its original;
   - while a peer is busy, the refresh neither rejects, drops nor reports; a half-written heartbeat doesn't change liveness;
   - a resumed session is live again; a silent session is folded only after a day; a missing own shard is rewritten;

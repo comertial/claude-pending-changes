@@ -1230,6 +1230,26 @@ test("this Claude hears of a reject made in another session", async ($, on) => {
   expect((await submit($, 'next')).context?.join('\n')).toMatch(/rejected your changes to `a\.txt`/)
 })
 
+test('a file accepted here and then changed again by another session is listed again', async ($, on) => {
+  const h = host(on, { '/repo/a.txt': 'a\n' })
+  await start($)
+  await $.tool.call(edit('/repo/a.txt', 'a', 'mine'))
+  const ui = await mountPane($)
+  await ui.press({ key: 'accept-all' })
+  await idle(h)
+  expect(await isEmpty(ui)).toBe(true)
+
+  // The other session's Claude edits it after the accept: its record is later than this session's resolve.
+  h.disk.set('/repo/a.txt', 'theirs\n')
+  peerShard(h, 'peer', { 'a.txt': { original: 'mine\n', at: h.clock.now() + 10 } })
+  peerAlive(h, 'peer')
+  await h.clock.advance(2000)
+  await idle(h)
+
+  expect(await listed(ui, /a\.txt/)).toBe(true)
+  await ui.unmount()
+})
+
 test("rows from another live session or an ended one carry an origin tag; this session's rows don't", async ($, on) => {
   const h = host(on, { '/repo/live.txt': 'l, theirs\n', '/repo/gone.txt': 'g, theirs\n', '/repo/mine.txt': 'm\n' })
   peerShard(h, 'peer', { 'live.txt': { original: 'l\n' } })
