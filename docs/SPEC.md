@@ -227,7 +227,7 @@ The refresh **pauses while any of Claude's writing tool calls is running** (the 
 
 With persistence on, each tick first writes the heartbeat (before the `toolsInFlight` check, so a long command doesn't make the session look ended), then reads the shards that changed and applies other sessions' records, then runs the per-file loop above. The persistence steps have their own error handling, so a failure there never skips the per-file loop. While another live session is busy, and for one tick after, the loop only updates counts.
 
-`settle` speaks for one of three sources: **Claude** (its tool: takes ownership and is recorded), **observed** (the refresh, a load, a prompt: keeps the owner and records only a drop), or **peer** (applies another session's record and records nothing). It keeps every persistence field of the entry it replaces.
+`settle` speaks for one of three sources: **Claude** (its tool: takes ownership and is recorded), **observed** (the refresh, a load, a prompt: keeps the owner and records only a drop), or **peer** (applies another session's record and records nothing). It keeps every persistence field of the entry it replaces. An observed settle only touches an entry that is still listed: one accepted or rejected while the refresh was reading its file isn't brought back.
 
 ### Tracking shell commands
 
@@ -257,7 +257,7 @@ Failed commands are still compared, because they may have changed files before f
   - Otherwise write `original` back. This also recreates a deleted file, and its folders.
   - Then drop the entry, clean up the temp copy and queue a note for Claude.
 - **Folder ✓/✗:** run the same thing for every entry whose path starts with `folder/`.
-- **With persistence:** every ✓ and ✗ first reads other sessions' changed records and skips a row whose record changed since it was drawn (see [The pane](#the-pane)). A resolve records a tombstone (`gone`, with `goneReason` `accepted` or `rejected`, the reject's kind and the owner) and releases the entry's originals. A reject of a file owned by another live session isn't noted here: that session tells its Claude when it reads the record.
+- **With persistence:** every ✓ and ✗ first reads other sessions' changed records and skips a row whose record changed since it was drawn (see [The pane](#the-pane)). A resolve records a tombstone, before its row is dropped (`gone`, with `goneReason` `accepted` or `rejected`, the reject's kind and the owner) and releases the entry's originals. A reject of a file owned by another live session isn't noted here: that session tells its Claude when it reads the record.
 
 `removePath` deletes through `$.process.run` (`cmd /c del`/`rmdir` on Windows, `rm -rf` elsewhere), because `$.fs` has no delete. It **refuses any path outside an allowed root**: the working directory for project files, the temp root for review copies.
 
@@ -294,7 +294,7 @@ Only in a git work tree, with `persistAcrossSessions` on, and with git new enoug
 
 **Heartbeat:** `<id>.alive` holds `{ busy, instance, detached? }`; its mtime is the beat. Heartbeat and shard files are created once per session and then only rewritten, which fires no event in VS Code's non-recursive `.git` watcher (creating or deleting one does).
 
-**Merging, per path:** the latest resolve, or a live event's `epoch`, cuts off everything at or before it. Of the live events left, the latest gives the owner, `seen`, the counts and `rel`, and the earliest gives the original and `createdDirs`. A record that replaces this session's own resolve carries an `epoch` at it.
+**Merging, per path:** the latest resolve, or a live event's `epoch`, cuts off everything at or before it. Of the live events left, the latest gives the owner, `seen`, the counts and `rel`, and the earliest gives the original and `createdDirs`. A record that replaces this session's own resolve carries an `epoch` at it. A record isn't applied over a resolve this session recorded at or after it, so a sync read before a ✓ or ✗ can't bring its row back.
 
 **Keeping shards consistent:**
 - A session that reads another's resolve removes the path from its own shard (self-closing); a newer live record elsewhere doesn't, since the older one supplies the original.
@@ -389,7 +389,7 @@ The lasting rules that every change must respect. Each one names the ideas it ru
 
 `claude plugin test` runs `hooks/pending-changes.test.ts` against the real engine, with an in-memory host under the plugin. It mocks:
 
-- **the file system:** files and folders with mtimes, a record of reads, and paths or listings that can be made to fail;
+- **the file system:** files and folders with mtimes, a record of reads, paths or listings that can be made to fail, and reads that can be held;
 - **`process.run`:** `rm`, `code --diff`, and a fake **git** at `/repo` (by default; `outsideGit` opts out) whose HEAD you give per test, with an in-memory object store and refs: `hash-object`, `cat-file --batch` (with an output cap), `mktree`, `ls-tree`, `update-ref` with compare-and-swap (and lost swaps or a lock error on demand), `for-each-ref`, the combined `rev-parse`, and calls that can be held open;
 - **the clock:** moved by hand;
 - **the session:** a switchable id and `session.end`;
@@ -404,6 +404,7 @@ This list is kept in sync with the suite by hand. What the tests cover:
 - **Accept and reject:**
   - Reject all restores originals and deletes created files.
   - Accept all clears the list and sends no notes.
+  - Accept all clears several files in one press in a git repo; Accept all, folder ✓ and Reject all pressed while a refresh is reading the files clear every row for good; reject tells Claude once per file, with no revert note.
 - **Diff view:**
   - It opens original-left, source-right, and saves update the counts.
   - Reverting every block drops the file and cleans its temp copy.

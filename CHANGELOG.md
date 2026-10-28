@@ -7,6 +7,10 @@ All notable changes to this mod are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Accept all and ✓ on a folder no longer leave some files behind, which happened in git repos with three or more files and whenever the 2-second refresh was running; and Reject all and ✗ on a folder no longer bring a row back for a moment and then tell Claude it was reverted ([#7](https://github.com/comertial/claude-pending-changes/issues/7)).
+
 ## [1.0.0] - 2026-10-18
 
 The first stable release: the review pane, shell tracking and Claude sync of 0.x, now kept across sessions and shared between sessions in one checkout.
