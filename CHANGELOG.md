@@ -7,6 +7,8 @@ All notable changes to this mod are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-28
+
 ### Fixed
 
 - Accept all and ✓ on a folder no longer leave some files behind, which happened in git repos with three or more files and whenever the 2-second refresh was running; and Reject all and ✗ on a folder no longer bring a row back for a moment and then tell Claude it was reverted ([#7](https://github.com/comertial/claude-pending-changes/issues/7)).
@@ -48,7 +50,8 @@ The first stable release: the review pane, shell tracking and Claude sync of 0.x
 - `/changes` command, collapsible and compact folders, hover highlight.
 - Per-session temp review copies with cleanup on accept/reject, session end and a 24-hour sweep.
 
-[Unreleased]: https://github.com/comertial/claude-pending-changes/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/comertial/claude-pending-changes/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/comertial/claude-pending-changes/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/comertial/claude-pending-changes/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/comertial/claude-pending-changes/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/comertial/claude-pending-changes/releases/tag/v0.1.0
