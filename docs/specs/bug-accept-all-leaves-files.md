@@ -1,4 +1,4 @@
-# Bug: Accept all and folder ✓ can leave files behind when a refresh is running
+# Bug: Accept all and folder ✓ can leave files behind
 
 **Status:** Approved
 **Issue:** [#7](https://github.com/comertial/claude-pending-changes/issues/7)
@@ -8,12 +8,22 @@
 ---
 
 ### Symptom
-Pressing **Accept all**, or ✓ on a folder, sometimes leaves some of the files in the list. Pressing it again clears them.
+Pressing **Accept all**, or ✓ on a folder, sometimes leaves some of the files in the list. Pressing it again clears them. In a git repo this happens with almost any press on three or more files.
 
 **Reject all** and ✗ on a folder can bring a row back for one tick. Claude then gets a stray "you reverted all your changes" note for it, on top of the "rejected" note.
 
 ### Reproduction
-This depends on timing: the press has to land while the 2-second refresh is partway through the list. It happens in a git work tree and outside git, on any OS.
+There are two ways in.
+
+**A. In a git repo, no refresh needed** (persistence on, the default; any OS):
+
+1. Have Claude edit three or more files, e.g. `src/a.txt` to `src/e.txt`.
+2. Press **Accept all**, or ✓ on `src/`, once.
+3. One or two files stay listed. Pressing again clears them.
+
+A probe with one press and no refresh left 1 of 3, 1 of 5 and 2 of 8 files listed in a git work tree. Outside git, nothing stayed.
+
+**B. During a refresh** (in a git work tree and outside git): the press has to land while the 2-second refresh is partway through the list.
 
 1. Have Claude edit several files, e.g. `src/a.txt` to `src/e.txt`.
 2. Press **Accept all**, or ✓ on `src/`, while a refresh tick is reading the files. More files, a slower disk and the tick's git work all widen the window.
@@ -34,11 +44,23 @@ Confirmed with probe tests in a scratch copy (see [#7](https://github.com/comert
 The SPEC doesn't say what the refresh does with an entry that was resolved while the tick was running. [Settling and the 2-second refresh](../SPEC.md#settling-and-the-2-second-refresh) describes the loop as "for each tracked file", which implies a file that is no longer tracked isn't touched. The fix states this explicitly.
 
 ### Actual
-- **Accept:** every row that the tick had in its copy of the list, but hadn't yet settled when ✓ removed it, is added back. It stays listed with its counts, and nothing is said to Claude. Its tombstone is already recorded, so with persistence on, the row exists only in this session's memory.
+- **Accept, cause A:** a row re-added by the sync stays listed with its counts, through every later tick. Its resolve is already in the shard, so the row exists only in this session's memory, and nothing is said to Claude.
+- **Accept, cause B:** every row that the tick had in its copy of the list, but hadn't yet settled when ✓ removed it, is added back. It stays listed with its counts, and nothing is said to Claude. Its tombstone is already recorded, so with persistence on, the row exists only in this session's memory.
 - **Reject:** a row whose file the tick read before ✗ restored it, and that the tick settles after ✗ removed it, is added back with Claude's counts. At the next tick the file is at its original, so the row drops off as a revert. Claude gets "The user reverted all your changes to `X`" on top of "The user rejected your changes to `X`". With persistence on, a second resolve is recorded with `goneReason` `reverted`.
 
 ### Root cause
-The refresh writes back entries it has an outdated copy of:
+Two background tasks write back entries from a copy taken before ✓ or ✗ removed them. Line numbers are as of `80bf640`, before the fix.
+
+**A. The flush's sync re-adds this session's own resolved entries** (git repo only):
+
+- Each `accept` ends with `void flush($)`. The flush runs `updateTree`, which calls `syncPeers` (`hooks/register.tsx:786`) while `act` goes on to the next rows.
+- `syncPeers` computes `rt.merged` from the shards, then `applyMerged` reads the list (`hooks/register.tsx:1000`), with awaits in between.
+- `accept` removed the row (`forget`) before it recorded the resolve (`recordGone`), with awaits in between too (`hooks/register.tsx:1396`–`1399`).
+- So a merge read before `recordGone` still has the row live, while the list read after `forget` lacks it. `applyMerged` treats that as a record it hasn't applied yet and adds the row back (`hooks/register.tsx:1111`), with no check against the resolve now in this session's own shard.
+
+Reject isn't hit by this path, because ✗ restores the file first and `applyMerged` skips a record whose file is back at its original (`hooks/register.tsx:1077`).
+
+**B. The refresh writes back entries it has an outdated copy of:**
 
 - `hooks/register.tsx:1660`: `pollOnce` reads the list once, then awaits a file read for each entry in turn.
 - `hooks/register.tsx:1672`: for each one it calls `settle(…, entry, current, …, { from: 'observed' })`, with the copied entry as the base.
@@ -60,15 +82,19 @@ Reject is narrower, because ✗ writes the original to disk before it removes th
 | [Settling and the 2-second refresh](../SPEC.md#settling-and-the-2-second-refresh): Claude's settles add new entries | Must not change | Every listing test, e.g. "an edit is listed with its counts…" |
 | [Accept and reject](../SPEC.md#accept-and-reject): Reject all, folder ✗ | Must not change (now holds during a refresh too: one "rejected" note per file and no revert note) | "reject all restores originals, deletes created files and tells Claude"; "rejecting a folder rejects every file under it…" |
 | [Design decisions](../SPEC.md#design-decisions) 3, "Claude never drifts": no note about a change the user didn't make | Must not change (the stray revert note after a reject breaks it today) | The revert note tests |
-| [Across sessions](../SPEC.md#across-sessions): a peer's record is applied, and a busy peer only updates counts | Must not change | The persistence and peer tests |
+| [Accept and reject](../SPEC.md#accept-and-reject): with persistence, ✓ and ✗ record their resolve | **Changes** (newly stated): the resolve is recorded before the row is dropped | None (new regression test) |
+| [Across sessions](../SPEC.md#across-sessions): applying merged records never brings back a row this session resolved after that record | **Changes** (newly stated) | None (new regression test) |
+| [Across sessions](../SPEC.md#across-sessions): a peer's record is applied, a busy peer only updates counts, and a load after `/clear` or `--resume` restores every pending file | Must not change | The persistence, peer and resume tests |
 
 ### Acceptance criteria
 1. Accept all pressed while a refresh tick is partway through the list clears every row, and the rows stay gone after the next tick. Claude is told nothing. A regression test proves it in both modes and fails before the fix.
 2. The same holds for ✓ on a folder: every file under it is cleared and stays cleared, and files outside it are untouched.
 3. Reject all pressed while a refresh tick has read a file but not yet settled it clears every row, and the rows stay gone. It restores every file and sends exactly one "rejected" note per file, with no revert notes. A regression test proves it in both modes and fails before the fix.
 4. A tick that finishes reading a file after it was accepted doesn't queue a note to Claude for it or record anything for it.
-5. For entries that are still listed, the refresh behaves as before: counts update, a file back at its original drops off with its note, and an emptied new file is rejected. The existing suite passes unchanged.
+5. In a git repo, Accept all with five files clears every row in one press with no refresh running, and the rows stay gone after the next tick. A regression test proves it in both modes and fails before the fix in a git work tree.
+6. For entries that are still listed, the refresh behaves as before: counts update, a file back at its original drops off with its note, and an emptied new file is rejected. The existing suite passes unchanged.
 
 ### Decisions
-- The fix is that an observed settle never adds back an entry that is no longer listed. Making the refresh and ✓/✗ take turns (a lock) would also work, but it adds waiting to every press and doesn't cover any other path that removes an entry during a tick.
-- The issue and the slug name Accept all, because that's what was reported. The same fix covers reject, and the CHANGELOG entry names both.
+- **Cause A:** ✓ and ✗ record their resolve before dropping the row, and `applyMerged` doesn't add a row whose own-shard record is a resolve at or after the merged record. Reordering alone isn't enough, because the merge can still be read before the resolve. The check alone isn't either, because the row could be dropped before the resolve is recorded.
+- **Cause B:** an observed settle never adds back an entry that is no longer listed. For both, making the background tasks and ✓/✗ take turns (a lock) would also work, but it adds waiting to every press and has to cover every task that writes the list.
+- Cause A was found while implementing, after the plan was approved; the user approved amending the spec in chat. The issue and the slug name Accept all, because that's what was reported. The same fix covers reject, and the CHANGELOG entry names both.
