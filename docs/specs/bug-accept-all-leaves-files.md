@@ -1,14 +1,16 @@
 # Bug: Accept all and folder ✓ can leave files behind when a refresh is running
 
-**Status:** Draft
+**Status:** Approved
 **Issue:** [#7](https://github.com/comertial/claude-pending-changes/issues/7)
-**Plan:** [`../plans/bug-accept-all-leaves-files.md`](../plans/) (written once this spec is approved)
+**Plan:** [`../plans/bug-accept-all-leaves-files.md`](../plans/bug-accept-all-leaves-files.md)
 **Found in:** v1.0.0
 
 ---
 
 ### Symptom
 Pressing **Accept all**, or ✓ on a folder, sometimes leaves some of the files in the list. Pressing it again clears them.
+
+**Reject all** and ✗ on a folder can bring a row back for one tick. Claude then gets a stray "you reverted all your changes" note for it, on top of the "rejected" note.
 
 ### Reproduction
 This depends on timing: the press has to land while the 2-second refresh is partway through the list. It happens in a git work tree and outside git, on any OS.
@@ -20,7 +22,7 @@ This depends on timing: the press has to land while the 2-second refresh is part
 Confirmed with probe tests in a scratch copy (see [#7](https://github.com/comertial/claude-pending-changes/issues/7)):
 - **Held read:** the refresh's read of `src/b.txt` is held, the button is pressed, then the read is released. `b.txt` and `c.txt` are listed again. This fails in both modes, for Accept all and for folder ✓.
 - **No forced timing:** in a git work tree with five edited files, pressing Accept all as a tick starts left `src/c.txt` listed in all 12 timings tried.
-- **Reject is unaffected:** the same probes for Reject all (24 timings plus the held read) always clear every row, restore every file and send one "rejected" note per file, with no stray revert notes.
+- **Reject, with the read answered before ✗ writes:** the refresh's read of `src/b.txt` gets Claude's content, but its answer is held until after Reject all. A row is listed again after the press, and it drops off at the next tick. Claude is then told about one revert on top of the five "rejected" notes. A first probe whose held read returned the content as it was *after* the press didn't show this. That's why [#7](https://github.com/comertial/claude-pending-changes/issues/7) first said reject was unaffected, and a comment there corrects it.
 
 ### Expected
 [The pane](../SPEC.md#the-pane):
@@ -32,7 +34,8 @@ Confirmed with probe tests in a scratch copy (see [#7](https://github.com/comert
 The SPEC doesn't say what the refresh does with an entry that was resolved while the tick was running. [Settling and the 2-second refresh](../SPEC.md#settling-and-the-2-second-refresh) describes the loop as "for each tracked file", which implies a file that is no longer tracked isn't touched. The fix states this explicitly.
 
 ### Actual
-Every row that the tick had in its copy of the list, but hadn't yet settled when ✓ removed it, is added back. It stays listed with its counts, and nothing is said to Claude. Its tombstone is already recorded, so with persistence on, the row exists only in this session's memory.
+- **Accept:** every row that the tick had in its copy of the list, but hadn't yet settled when ✓ removed it, is added back. It stays listed with its counts, and nothing is said to Claude. Its tombstone is already recorded, so with persistence on, the row exists only in this session's memory.
+- **Reject:** a row whose file the tick read before ✗ restored it, and that the tick settles after ✗ removed it, is added back with Claude's counts. At the next tick the file is at its original, so the row drops off as a revert. Claude gets "The user reverted all your changes to `X`" on top of "The user rejected your changes to `X`". With persistence on, a second resolve is recorded with `goneReason` `reverted`.
 
 ### Root cause
 The refresh writes back entries it has an outdated copy of:
@@ -43,7 +46,7 @@ The refresh writes back entries it has an outdated copy of:
 
 `act` (`hooks/register.tsx:1433`) accepts rows one at a time, with awaits between them (`ensureLoaded`, `syncPeers`, and in each `accept` the `forget`, `cleanupReview` and `flush`). Nothing keeps it from running during a tick. Any row that the tick copied but hasn't settled yet when ✓ removes it comes back.
 
-Reject escapes because ✗ writes the original to disk before it removes the row. A tick that reads the file after that sees `current === original` and takes the drop branch, which deletes nothing that's still there. A tick that read the file before the write still sees `prev`, because `forget` comes after the write.
+Reject is narrower, because ✗ writes the original to disk before it removes the row. A tick that reads the file after the write sees `current === original` and takes the drop branch, which removes nothing. But a tick whose read came back before the write still has 3–4 round trips to make before its `update` (`ctx`, `session.id`, `nextAt`; `hooks/register.tsx:224`–`229`). ✗ needs only `fs.write` and `forget` (`hooks/register.tsx:1403`–`1414`), so the tick can land after `forget` and add the row back with Claude's content.
 
 `settle` has one observed caller: the refresh. The other callers are Claude's own changes (`hooks/register.tsx:1897`, `1909`, `2116`), which must still be able to add new entries.
 
@@ -55,16 +58,17 @@ Reject escapes because ✗ writes the original to disk before it removes the row
 | [The pane](../SPEC.md#the-pane): Accept all, folder ✓ | Must not change (now holds during a refresh too) | "accept all keeps the changes, clears the list and tells Claude nothing"; "accepting a folder accepts only the files under it" |
 | [Settling and the 2-second refresh](../SPEC.md#settling-and-the-2-second-refresh): the refresh updates counts, drops files back at their original, reports hand edits and reverts, and rejects emptied new files | Must not change | "a review opens the original left and the source right; saves there update the counts"; "reverting every block in the review drops the file and its temp copy"; "emptying a new file in the diff rejects it…"; the hand-edit and revert note tests |
 | [Settling and the 2-second refresh](../SPEC.md#settling-and-the-2-second-refresh): Claude's settles add new entries | Must not change | Every listing test, e.g. "an edit is listed with its counts…" |
-| [Accept and reject](../SPEC.md#accept-and-reject): Reject all, folder ✗ | Must not change | "reject all restores originals, deletes created files and tells Claude"; "rejecting a folder rejects every file under it…" |
+| [Accept and reject](../SPEC.md#accept-and-reject): Reject all, folder ✗ | Must not change (now holds during a refresh too: one "rejected" note per file and no revert note) | "reject all restores originals, deletes created files and tells Claude"; "rejecting a folder rejects every file under it…" |
+| [Design decisions](../SPEC.md#design-decisions) 3, "Claude never drifts": no note about a change the user didn't make | Must not change (the stray revert note after a reject breaks it today) | The revert note tests |
 | [Across sessions](../SPEC.md#across-sessions): a peer's record is applied, and a busy peer only updates counts | Must not change | The persistence and peer tests |
 
 ### Acceptance criteria
 1. Accept all pressed while a refresh tick is partway through the list clears every row, and the rows stay gone after the next tick. Claude is told nothing. A regression test proves it in both modes and fails before the fix.
 2. The same holds for ✓ on a folder: every file under it is cleared and stays cleared, and files outside it are untouched.
-3. Reject all pressed while a refresh tick is partway through the list still clears every row, restores every file and sends exactly one "rejected" note per file, with no revert notes. A test guards this in both modes.
+3. Reject all pressed while a refresh tick has read a file but not yet settled it clears every row, and the rows stay gone. It restores every file and sends exactly one "rejected" note per file, with no revert notes. A regression test proves it in both modes and fails before the fix.
 4. A tick that finishes reading a file after it was accepted doesn't queue a note to Claude for it or record anything for it.
 5. For entries that are still listed, the refresh behaves as before: counts update, a file back at its original drops off with its note, and an emptied new file is rejected. The existing suite passes unchanged.
 
 ### Decisions
 - The fix is that an observed settle never adds back an entry that is no longer listed. Making the refresh and ✓/✗ take turns (a lock) would also work, but it adds waiting to every press and doesn't cover any other path that removes an entry during a tick.
-- Reject gets a guard test even though it isn't affected, so a later change to the order of `reject`'s steps (for example forgetting the row before restoring the file) can't bring the race back unnoticed.
+- The issue and the slug name Accept all, because that's what was reported. The same fix covers reject, and the CHANGELOG entry names both.
