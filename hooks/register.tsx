@@ -232,6 +232,8 @@ async function settle(
   await update($, files, all => {
     wasEmpty = Object.keys(all).length === 0
     const prev = all[key]
+    // The refresh read a copy of the list: an entry resolved since is not brought back.
+    if (from === 'observed' && !prev) return all
     const next = { ...all }
     if (current === base.original) {
       if (opts.noDrop) return all
@@ -1060,7 +1062,7 @@ async function applyMerged($: $, c: Ctx & { git: GitCtx; gitRoot: string }, me: 
   const handovers: string[] = []
   // $.state holds one value up to STATE_CAP characters: leave out what would pass it, and say so once.
   let size = JSON.stringify(await read($, files)).length
-  for (const [, m] of changes) {
+  for (const [gitKey, m] of changes) {
     if ((m.original && failed.has(m.original)) || (m.seen && failed.has(m.seen))) continue
     const path = pathOfGitRel(c, m.rel)
     const key = keyOf(path, c.isWindows)
@@ -1106,7 +1108,12 @@ async function applyMerged($: $, c: Ctx & { git: GitCtx; gitRoot: string }, me: 
       at: m.at,
       branch: m.branch,
     }
-    await update($, files, all => ({ ...all, [key]: next }))
+    await update($, files, all => {
+      // Resolved here since the merge was read: the resolve is recorded before its row goes.
+      const own = rt.shard?.entries[gitKey]
+      if (own?.gone && own.at >= m.at) return all
+      return { ...all, [key]: next }
+    })
   }
   for (const rel of handovers) await queueNotice($, note.handover(rel))
 
@@ -1391,12 +1398,12 @@ async function accept($: $, key: string): Promise<void> {
   const entry = (await read($, files))[key]
   if (!entry) return
   const c = await ctx($)
+  // Recorded before the row goes, so a sync that finds the row missing also finds the resolve.
+  if (persistOn(c) && entry.gitRel) recordGone(c, entry, await $.session.id(), await nextAt($), 'accepted')
   await forget($, key)
   await cleanupReview($, entry.review)
-  if (persistOn(c)) {
-    if (entry.gitRel) recordGone(c, entry, await $.session.id(), await nextAt($), 'accepted')
-    void flush($)
-  } else await noteResolvedWhileOff($, c, entry)
+  if (persistOn(c)) void flush($)
+  else await noteResolvedWhileOff($, c, entry)
 }
 
 async function reject($: $, key: string): Promise<void> {
@@ -1409,17 +1416,17 @@ async function reject($: $, key: string): Promise<void> {
   } else {
     await $.fs.write(entry.path, entry.original)
   }
-  await forget($, key)
-  await cleanupReview($, entry.review)
   const kind: RejectKind = entry.original === null ? 'new' : entry.isDeleted ? 'deletion' : 'change'
   const me = await $.session.id()
+  // Recorded before the row goes, as in accept.
+  if (persistOn(c) && entry.gitRel) recordGone(c, entry, me, await nextAt($), 'rejected', kind)
+  await forget($, key)
+  await cleanupReview($, entry.review)
   // A live owner elsewhere hears of it from the resolve record; otherwise this Claude is told.
   const ownerElsewhere = persistOn(c) && entry.owner && entry.owner !== me && (await read($, sessions))[entry.owner] === 'live'
   if (!ownerElsewhere) await queueNotice($, rejectNote(entry.rel, kind))
-  if (persistOn(c)) {
-    if (entry.gitRel) recordGone(c, entry, me, await nextAt($), 'rejected', kind)
-    void flush($)
-  } else await noteResolvedWhileOff($, c, entry)
+  if (persistOn(c)) void flush($)
+  else await noteResolvedWhileOff($, c, entry)
 }
 
 /**

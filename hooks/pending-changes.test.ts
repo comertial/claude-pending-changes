@@ -216,6 +216,7 @@ function host(on: On, initial: Record<string, string> = {}, options: HostOptions
   const reads: string[] = []
   const failing = new Set<string>()
   const holds = new Map<string, { promise: Promise<void>; release: () => void }>()
+  const readHolds = new Map<string, { promise: Promise<void>; reached: () => void }>()
   const session = { id: options.id ?? 's1' }
   let onToolRun: (() => void | Promise<void>) | undefined
   const tool = { outcome: 'ok' as 'ok' | 'deny' | 'error' }
@@ -226,10 +227,16 @@ function host(on: On, initial: Record<string, string> = {}, options: HostOptions
   on('session.cwd', () => ({ value: cwd }))
   on('session.id', () => ({ value: session.id }))
   on('fs.exists', ($, e) => ({ value: disk.has(norm(e.path)) || dirs.has(norm(e.path)) }))
-  on('fs.read', ($, e) => {
+  on('fs.read', async ($, e) => {
     if (fsFails(e.path)) throw new Error(`EACCES ${e.path}`)
     reads.push(norm(e.path))
     const text = disk.get(norm(e.path))
+    // A held read answers with the content from before the hold, as if still in flight.
+    const held = readHolds.get(norm(e.path))
+    if (held) {
+      held.reached()
+      await held.promise
+    }
     if (text === undefined) throw new Error(`ENOENT ${e.path}`)
     return { value: text }
   })
@@ -331,6 +338,21 @@ function host(on: On, initial: Record<string, string> = {}, options: HostOptions
     failListing: (skip: number, count: number) => void Object.assign(listFails, { skip, count }),
     /** Makes reads, writes and lists under `prefix` throw. */
     failFs: (prefix: string) => void failing.add(prefix),
+    /** Holds the answer to the next reads of `path` (content taken before the hold) until `release`; `reached` resolves when one is held. */
+    holdRead(path: string) {
+      let release!: () => void
+      let reached!: () => void
+      const promise = new Promise<void>(resolve => (release = resolve))
+      const isReached = new Promise<void>(resolve => (reached = resolve))
+      readHolds.set(path, { promise, reached })
+      return {
+        reached: isReached,
+        release: () => {
+          readHolds.delete(path)
+          release()
+        },
+      }
+    },
     /** Holds every `git <sub>` call until the returned function is called. */
     hold(sub: string) {
       let release!: () => void
@@ -463,6 +485,82 @@ both('accept all keeps the changes, clears the list and tells Claude nothing', a
   expect(disk.get('/repo/a.txt')).toBe('uno\n')
   expect(await isEmpty(ui)).toBe(true)
   expect((await submit($, 'next')).context ?? []).toEqual([])
+  await ui.unmount()
+})
+
+/** Claude edits `files`, then a refresh tick stops on `src/b.txt` after reading it; returns the tick and its release. */
+async function tickHeldOnB($: Engine, on: On, files: string[]) {
+  const h = host(on, Object.fromEntries(files.map(path => [path, 'old\n'])))
+  for (const path of files) await $.tool.call(edit(path, 'old', 'new'))
+  const ui = await mountPane($)
+  const { reached, release } = h.holdRead('/repo/src/b.txt')
+  const tick = h.clock.advance(2000)
+  await reached
+  return { ...h, ui, tick, release }
+}
+
+const listed = async (ui: Pane, name: RegExp) => (await ui.find({ type: 'Button', text: name })) !== undefined
+
+both('accept all clears five files in one press, with no refresh running', async ($, on) => {
+  const files = ['a', 'b', 'c', 'd', 'e'].map(n => `/repo/src/${n}.txt`)
+  const { clock } = host(on, Object.fromEntries(files.map(path => [path, 'old\n'])))
+  for (const path of files) await $.tool.call(edit(path, 'old', 'new'))
+  const ui = await mountPane($)
+
+  // Each accept's background flush syncs the shared records while the next rows are accepted.
+  await ui.press({ key: 'accept-all' })
+  await clock.advance(0)
+
+  expect(await isEmpty(ui)).toBe(true)
+  await clock.advance(2000)
+  expect(await isEmpty(ui)).toBe(true)
+  await ui.unmount()
+})
+
+both('accept all during a refresh clears every file, and they stay cleared', async ($, on) => {
+  const { ui, tick, release, clock } = await tickHeldOnB($, on, ['/repo/src/a.txt', '/repo/src/b.txt', '/repo/src/c.txt'])
+
+  await ui.press({ key: 'accept-all' })
+  release()
+  await tick
+
+  expect(await isEmpty(ui)).toBe(true)
+  await clock.advance(2000)
+  expect(await isEmpty(ui)).toBe(true)
+  expect((await submit($, 'next')).context ?? []).toEqual([])
+  await ui.unmount()
+})
+
+both('folder ✓ during a refresh clears that folder for good and leaves the rest', async ($, on) => {
+  const { ui, tick, release, clock } = await tickHeldOnB($, on, ['/repo/src/a.txt', '/repo/src/b.txt', '/repo/src/c.txt', '/repo/top.txt'])
+
+  await ui.press({ key: `accept-dir-${folderId('src')}` })
+  release()
+  await tick
+
+  for (let round = 0; round < 2; round++) {
+    for (const name of [/a\.txt/, /b\.txt/, /c\.txt/]) expect(await listed(ui, name)).toBe(false)
+    expect(await listed(ui, /top\.txt/)).toBe(true)
+    await clock.advance(2000)
+  }
+  await ui.unmount()
+})
+
+both('reject all during a refresh restores every file and tells Claude once per file', async ($, on) => {
+  const files = ['/repo/src/a.txt', '/repo/src/b.txt', '/repo/src/c.txt']
+  const { ui, tick, release, clock, disk } = await tickHeldOnB($, on, files)
+
+  await ui.press({ key: 'reject-all' })
+  release()
+  await tick
+
+  expect(await isEmpty(ui)).toBe(true)
+  for (const path of files) expect(disk.get(path)).toBe('old\n')
+  await clock.advance(2000)
+  expect(await isEmpty(ui)).toBe(true)
+  const told = (await submit($, 'next')).context?.join('\n') ?? ''
+  expect(told.match(/rejected your changes/g)?.length).toBe(3)
+  expect(told).not.toMatch(/reverted|modified/)
   await ui.unmount()
 })
 
